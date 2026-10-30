@@ -23,8 +23,6 @@
   #speedCtl{position:fixed;bottom:calc(34px + env(safe-area-inset-bottom));left:12px;right:12px;z-index:12;
     display:flex;align-items:center;gap:10px;color:#8fa3d9;font-size:12px;}
   #speedCtl input{flex:1;accent-color:#4dd0ff;}
-  #flash{position:fixed;inset:0;pointer-events:none;z-index:8;opacity:0;
-    background:radial-gradient(ellipse at center, rgba(255,40,60,.55) 0%, rgba(255,40,60,.15) 60%, transparent 100%);}
   #overlay{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
     background:rgba(8,12,28,.55);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
     color:#eef1ff;z-index:10;text-align:center;padding:20px;}
@@ -42,7 +40,6 @@
 <div id="hud"><b id="score">0</b> &nbsp;&middot;&nbsp; <span class="best">Rekord: <span id="best">0</span></span> &nbsp;&middot;&nbsp; H&ouml;he: <span id="height">0</span></div>
 <button id="torusBtn" type="button">Torus: Aus</button>
 <div id="speedCtl"><span>Langsam</span><input id="speed" type="range" min="60" max="400" step="10" value="260"/><span>Schnell</span></div>
-<div id="flash"></div>
 <div id="hint">Wischen entlang der W&uuml;rfelkanten: vor/zur&uuml;ck/links/rechts &middot; Pinch: rauf/runter</div>
 <div id="overlay">
   <h1 id="ovTitle">3D SNAKE</h1>
@@ -223,18 +220,7 @@ speedSlider.addEventListener('input', function(){
   try{ localStorage.setItem('snake3d_speed', speedSlider.value); }catch(e){}
 });
 
-var flashEl = document.getElementById('flash');
-var flashUntil = 0;
-function triggerFlash(now){
-  if (now < flashUntil) return;
-  flashUntil = now + 160;
-  flashEl.style.transition = 'none';
-  flashEl.style.opacity = '1';
-  requestAnimationFrame(function(){
-    flashEl.style.transition = 'opacity 220ms ease-out';
-    flashEl.style.opacity = '0';
-  });
-}
+var laneFlashUntil = [0, 0, 0];
 
 var overlay = document.getElementById('overlay');
 var ovTitle = document.getElementById('ovTitle');
@@ -489,12 +475,15 @@ function animate(now){
     for (var li = 0; li < lanes.length; li++){
       var a = lanes[li].userData.axis;
       var isDir = (a.x === dir.x && a.y === dir.y && a.z === dir.z);
+      var hitsFruit = a.x ? (h.y === foodPos.y && h.z === foodPos.z)
+                    : a.y ? (h.x === foodPos.x && h.z === foodPos.z)
+                    : (h.x === foodPos.x && h.y === foodPos.y);
+      if (hitsFruit && running) laneFlashUntil[li] = now + 180;
+      var flashing = now < laneFlashUntil[li];
       lanes[li].scale.set(a.x ? N : 0.7, a.y ? N : 0.7, a.z ? N : 0.7);
       lanes[li].position.set(a.x ? 0 : hx, a.y ? 0.5 : hy, a.z ? 0 : hz);
-      lanes[li].material.opacity = isDir ? pulse2 * 2.2 : pulse2;
-    }
-    if (running && (snake[0].x === foodPos.x || snake[0].y === foodPos.y || snake[0].z === foodPos.z)){
-      triggerFlash(now);
+      lanes[li].material.opacity = flashing ? 0.55 : (isDir ? pulse2 * 2.2 : pulse2);
+      lanes[li].material.color.setHex(flashing ? 0xff2244 : (a.x ? 0x66b3ff : a.y ? 0x4d9fff : 0x3385ff));
     }
     var fx = cell(foodPos.x), fy = cell(foodPos.y) + 0.5, fz = cell(foodPos.z);
     var fsf = 1 + (fy - 0.5 + OFF) / N * 0.5;
