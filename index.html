@@ -138,6 +138,7 @@ function ensureSegments(n){
     var isHead = segments.length === 0;
     var m = new THREE.Mesh(isHead ? headGeo : segGeo, isHead ? headMat : new THREE.MeshStandardMaterial({roughness: 0.35, metalness: 0.1}));
     m.castShadow = true;
+    if (isHead) m.rotation.order = 'YXZ';
     scene.add(m);
     segments.push(m);
   }
@@ -274,6 +275,7 @@ function queueDir(nd){
 var touches = {};
 var swipeStart = null;
 var pinchDist = 0;
+var pinched = false;
 function touchPos(e){
   var t = e.changedTouches[0];
   return {x: t.clientX, y: t.clientY};
@@ -284,7 +286,7 @@ window.addEventListener('touchstart', function(e){
     touches[t.identifier] = {x: t.clientX, y: t.clientY};
   }
   var ids = Object.keys(touches);
-  if (ids.length === 1) swipeStart = {x: touches[ids[0]].x, y: touches[ids[0]].y};
+  if (ids.length === 1){ swipeStart = {x: touches[ids[0]].x, y: touches[ids[0]].y}; pinched = false; }
   if (ids.length === 2){
     var a = touches[ids[0]], b = touches[ids[1]];
     pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
@@ -302,9 +304,10 @@ window.addEventListener('touchmove', function(e){
     var d = Math.hypot(a.x - b.x, a.y - b.y);
     var delta = d - pinchDist;
     if (Math.abs(delta) >= 28){
-      // Pinch auseinander (Zoom-in-Geste) = вниз/runter, zusammen = rauf
+      // Pinch auseinander (Zoom-in) = runter, zusammen (Zoom-out) = rauf
       queueDir(delta > 0 ? {x: 0, y: -1, z: 0} : {x: 0, y: 1, z: 0});
       pinchDist = d;
+      pinched = true;
     }
   }
 }, {passive: false});
@@ -312,14 +315,14 @@ window.addEventListener('touchend', function(e){
   var ended = touchPos(e);
   for (var i = 0; i < e.changedTouches.length; i++) delete touches[e.changedTouches[i].identifier];
   var ids = Object.keys(touches);
-  if (ids.length === 0 && swipeStart && running){
+  if (ids.length === 0 && swipeStart && running && !pinched){
     var dx = ended.x - swipeStart.x, dy = ended.y - swipeStart.y;
     if (Math.max(Math.abs(dx), Math.abs(dy)) < 24){ handleTap(); }
     else if (Math.abs(dx) > Math.abs(dy)) queueDir(dx > 0 ? {x: 1, y: 0, z: 0} : {x: -1, y: 0, z: 0});
     else queueDir(dy > 0 ? {x: 0, y: 0, z: 1} : {x: 0, y: 0, z: -1});
   }
   if (ids.length < 2) pinchDist = 0;
-  if (ids.length === 0) swipeStart = null;
+  if (ids.length === 0){ swipeStart = null; pinched = false; }
 }, {passive: true});
 
 // --- Desktop: Pfeilen = X/Z, +/- bzw. PageUp/PageDown = Y, Mausrad = Y ---
@@ -376,8 +379,7 @@ function animate(now){
     }
   }
   if (segments.length){
-    segments[0].rotation.y = Math.atan2(dir.x, dir.z);
-    segments[0].rotation.x = -dir.y * Math.PI / 2;
+    segments[0].rotation.set(-dir.y * Math.PI / 2, Math.atan2(dir.x, dir.z), 0);
   }
   var pulse = 1 + Math.sin(now * 0.005) * 0.15;
   food.scale.set(pulse, pulse, pulse);
