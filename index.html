@@ -110,17 +110,17 @@ var boxFill = new THREE.Mesh(
 boxFill.position.y = 0.5;
 scene.add(boxFill);
 
-// Leuchtende "Lane" in aktueller Bewegungsrichtung
-var lane = new THREE.Mesh(
-  new THREE.BoxGeometry(1, 1, 1),
-  new THREE.MeshBasicMaterial({color: 0x4dd0ff, transparent: true, opacity: 0.10, blending: THREE.AdditiveBlending, depthWrite: false})
-);
-scene.add(lane);
-var laneGlow = new THREE.Mesh(
-  new THREE.BoxGeometry(1, 1, 1),
-  new THREE.MeshBasicMaterial({color: 0x7dff9b, transparent: true, opacity: 0.05, blending: THREE.AdditiveBlending, depthWrite: false})
-);
-scene.add(laneGlow);
+// Leuchtende Hilfslinien durch den Kopf: eine pro Achse, in Bewegungsrichtung heller
+var lanes = [];
+[[1, 0, 0, 0x4dd0ff], [0, 1, 0, 0x7dff9b], [0, 0, 1, 0xff9b4d]].forEach(function(cfg){
+  var m = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshBasicMaterial({color: cfg[3], transparent: true, opacity: 0.08, blending: THREE.AdditiveBlending, depthWrite: false})
+  );
+  m.userData.axis = {x: cfg[0], y: cfg[1], z: cfg[2]};
+  scene.add(m);
+  lanes.push(m);
+});
 
 // Dezente Ebenen-Linien im Volumen
 var levelLines = new THREE.Group();
@@ -423,13 +423,14 @@ function animate(now){
     segments[0].rotation.set(-dir.y * Math.PI / 2, Math.atan2(dir.x, dir.z), 0);
     var h = snake[0];
     var hx = cell(h.x), hy = cell(h.y) + 0.5, hz = cell(h.z);
-    lane.scale.set(dir.x !== 0 ? N : 0.9, dir.y !== 0 ? N : 0.9, dir.z !== 0 ? N : 0.9);
-    lane.position.set(dir.x !== 0 ? 0 : hx, dir.y !== 0 ? 0.5 : hy, dir.z !== 0 ? 0 : hz);
-    laneGlow.scale.set(lane.scale.x * 1.6, lane.scale.y * 1.6, lane.scale.z * 1.6);
-    laneGlow.position.copy(lane.position);
-    var pulse2 = 0.08 + Math.sin(now * 0.004) * 0.03;
-    lane.material.opacity = pulse2;
-    laneGlow.material.opacity = pulse2 * 0.5;
+    var pulse2 = 0.05 + Math.sin(now * 0.004) * 0.02;
+    for (var li = 0; li < lanes.length; li++){
+      var a = lanes[li].userData.axis;
+      var isDir = (a.x === dir.x && a.y === dir.y && a.z === dir.z);
+      lanes[li].scale.set(a.x ? N : 0.7, a.y ? N : 0.7, a.z ? N : 0.7);
+      lanes[li].position.set(a.x ? 0 : hx, a.y ? 0.5 : hy, a.z ? 0 : hz);
+      lanes[li].material.opacity = isDir ? pulse2 * 2.2 : pulse2;
+    }
   }
   var pulse = 1 + Math.sin(now * 0.005) * 0.15;
   food.scale.set(pulse, pulse, pulse);
