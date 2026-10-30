@@ -475,9 +475,9 @@ function animate(now){
     for (var li = 0; li < lanes.length; li++){
       var a = lanes[li].userData.axis;
       var isDir = (a.x === dir.x && a.y === dir.y && a.z === dir.z);
-      var hitsFruit = a.x ? (h.x === foodPos.x)
-                    : a.y ? (h.y === foodPos.y)
-                    : (h.z === foodPos.z);
+      var hitsFruit = a.x ? (h.y === foodPos.y && h.z === foodPos.z)
+                    : a.y ? (h.x === foodPos.x && h.z === foodPos.z)
+                    : (h.x === foodPos.x && h.y === foodPos.y);
       if (hitsFruit && running) laneFlashUntil[li] = now + 180;
       var flashing = now < laneFlashUntil[li];
       lanes[li].scale.set(a.x ? N : 0.7, a.y ? N : 0.7, a.z ? N : 0.7);
