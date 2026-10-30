@@ -112,22 +112,22 @@ scene.add(boxFill);
 
 // Leuchtende Hilfslinien durch den Kopf: eine pro Achse, in Bewegungsrichtung heller
 var lanes = [];
-[[1, 0, 0, 0x4dd0ff], [0, 1, 0, 0x7dff9b], [0, 0, 1, 0xff9b4d]].forEach(function(cfg){
+[[1, 0, 0, 0x66b3ff], [0, 1, 0, 0x4d9fff], [0, 0, 1, 0x3385ff]].forEach(function(cfg){
   var m = new THREE.Mesh(
     new THREE.BoxGeometry(1, 1, 1),
-    new THREE.MeshBasicMaterial({color: cfg[3], transparent: true, opacity: 0.08, blending: THREE.AdditiveBlending, depthWrite: false})
+    new THREE.MeshBasicMaterial({color: cfg[3], transparent: true, opacity: 0.10, blending: THREE.AdditiveBlending, depthWrite: false})
   );
   m.userData.axis = {x: cfg[0], y: cfg[1], z: cfg[2]};
   scene.add(m);
   lanes.push(m);
 });
 
-// Gleiche Hilfslinien in Magenta, zentriert auf der Frucht
+// Gleiche Hilfslinien in Gelb, zentriert auf der Frucht
 var fruitLanes = [];
 [[1, 0, 0], [0, 1, 0], [0, 0, 1]].forEach(function(a){
   var m = new THREE.Mesh(
     new THREE.BoxGeometry(1, 1, 1),
-    new THREE.MeshBasicMaterial({color: 0xff4dd8, transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false})
+    new THREE.MeshBasicMaterial({color: 0xffe14d, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false})
   );
   m.userData.axis = {x: a[0], y: a[1], z: a[2]};
   scene.add(m);
@@ -448,7 +448,7 @@ function animate(now){
       var fa = fruitLanes[fi].userData.axis;
       fruitLanes[fi].scale.set(fa.x ? N : 0.7, fa.y ? N : 0.7, fa.z ? N : 0.7);
       fruitLanes[fi].position.set(fa.x ? 0 : fx, fa.y ? 0.5 : fy, fa.z ? 0 : fz);
-      fruitLanes[fi].material.opacity = 0.05 + Math.sin(now * 0.004 + 1.3) * 0.02;
+      fruitLanes[fi].material.opacity = 0.13 + Math.sin(now * 0.004 + 1.3) * 0.05;
     }
   }
   var pulse = 1 + Math.sin(now * 0.005) * 0.15;
