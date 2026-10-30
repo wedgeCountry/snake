@@ -161,6 +161,9 @@ var segGeo = new THREE.BoxGeometry(0.84, 0.84, 0.84);
 var headGeo = new THREE.BoxGeometry(0.9, 0.9, 0.9);
 var headMat = new THREE.MeshStandardMaterial({color: 0x7dff9b, emissive: 0x1fae4f, emissiveIntensity: 0.6, roughness: 0.3});
 var segments = [];
+var blobShadows = [];
+var blobGeo = new THREE.CircleGeometry(0.42, 24);
+var blobMat = new THREE.MeshBasicMaterial({color: 0x000000, transparent: true, opacity: 0.4, depthWrite: false});
 function ensureSegments(n){
   while (segments.length < n){
     var isHead = segments.length === 0;
@@ -169,6 +172,11 @@ function ensureSegments(n){
     if (isHead) m.rotation.order = 'YXZ';
     scene.add(m);
     segments.push(m);
+    var b = new THREE.Mesh(blobGeo, blobMat.clone());
+    b.rotation.x = -Math.PI / 2;
+    b.position.y = -OFF - 0.5;
+    scene.add(b);
+    blobShadows.push(b);
   }
 }
 function cell(c){ return c - OFF; }
@@ -211,7 +219,7 @@ function reset(){
   score = 0;
   stepTime = 190;
   dead = false;
-  while (segments.length > snake.length) scene.remove(segments.pop());
+  while (segments.length > snake.length){ scene.remove(segments.pop()); scene.remove(blobShadows.pop()); }
   ensureSegments(snake.length);
   spawnFood();
   updateHud();
@@ -430,6 +438,12 @@ function animate(now){
       var f = i / Math.max(1, snake.length - 1);
       segments[i].material.color.setHSL(0.36 - f * 0.10, 0.85, 0.55 - f * 0.25);
     }
+    var sy = segments[i].position.y - 0.5;
+    var sf = Math.max(0.25, 1 - (sy + OFF) / N * 0.75);
+    blobShadows[i].position.x = segments[i].position.x;
+    blobShadows[i].position.z = segments[i].position.z;
+    blobShadows[i].scale.set(sf, sf, sf);
+    blobShadows[i].material.opacity = 0.42 * sf;
   }
   if (segments.length){
     segments[0].rotation.set(-dir.y * Math.PI / 2, Math.atan2(dir.x, dir.z), 0);
