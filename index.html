@@ -110,6 +110,18 @@ var boxFill = new THREE.Mesh(
 boxFill.position.y = 0.5;
 scene.add(boxFill);
 
+// Leuchtende "Lane" in aktueller Bewegungsrichtung
+var lane = new THREE.Mesh(
+  new THREE.BoxGeometry(1, 1, 1),
+  new THREE.MeshBasicMaterial({color: 0x4dd0ff, transparent: true, opacity: 0.10, blending: THREE.AdditiveBlending, depthWrite: false})
+);
+scene.add(lane);
+var laneGlow = new THREE.Mesh(
+  new THREE.BoxGeometry(1, 1, 1),
+  new THREE.MeshBasicMaterial({color: 0x7dff9b, transparent: true, opacity: 0.05, blending: THREE.AdditiveBlending, depthWrite: false})
+);
+scene.add(laneGlow);
+
 // Dezente Ebenen-Linien im Volumen
 var levelLines = new THREE.Group();
 for (var li = 1; li < N; li++){
@@ -158,8 +170,7 @@ function setTorus(on){
   torus = on;
   try{ localStorage.setItem('snake3d_torus', on ? '1' : '0'); }catch(e){}
   torusBtn.textContent = 'Torus: ' + (on ? 'An' : 'Aus');
-  boxEdges.visible = !on;
-  boxFill.visible = !on;
+  boxEdges.material.opacity = on ? 0.22 : 0.55;
 }
 torusBtn.addEventListener('pointerdown', function(e){
   e.stopPropagation();
@@ -407,6 +418,15 @@ function animate(now){
   }
   if (segments.length){
     segments[0].rotation.set(-dir.y * Math.PI / 2, Math.atan2(dir.x, dir.z), 0);
+    var h = snake[0];
+    var hx = cell(h.x), hy = cell(h.y) + 0.5, hz = cell(h.z);
+    lane.scale.set(dir.x !== 0 ? N : 0.9, dir.y !== 0 ? N : 0.9, dir.z !== 0 ? N : 0.9);
+    lane.position.set(dir.x !== 0 ? 0 : hx, dir.y !== 0 ? 0.5 : hy, dir.z !== 0 ? 0 : hz);
+    laneGlow.scale.set(lane.scale.x * 1.6, lane.scale.y * 1.6, lane.scale.z * 1.6);
+    laneGlow.position.copy(lane.position);
+    var pulse2 = 0.08 + Math.sin(now * 0.004) * 0.03;
+    lane.material.opacity = pulse2;
+    laneGlow.material.opacity = pulse2 * 0.5;
   }
   var pulse = 1 + Math.sin(now * 0.005) * 0.15;
   food.scale.set(pulse, pulse, pulse);
