@@ -155,6 +155,13 @@ food.castShadow = true;
 scene.add(food);
 var foodLight = new THREE.PointLight(0xff7733, 1.2, 10);
 scene.add(foodLight);
+var foodBlob = new THREE.Mesh(
+  new THREE.CircleGeometry(0.42, 24),
+  new THREE.MeshBasicMaterial({color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false})
+);
+foodBlob.rotation.x = -Math.PI / 2;
+foodBlob.position.y = -OFF - 0.5;
+scene.add(foodBlob);
 
 // Schlangen-Segmente
 var segGeo = new THREE.BoxGeometry(0.84, 0.84, 0.84);
@@ -439,11 +446,11 @@ function animate(now){
       segments[i].material.color.setHSL(0.36 - f * 0.10, 0.85, 0.55 - f * 0.25);
     }
     var sy = segments[i].position.y - 0.5;
-    var sf = Math.max(0.25, 1 - (sy + OFF) / N * 0.75);
+    var sf = 1 + (sy + OFF) / N * 0.5;
     blobShadows[i].position.x = segments[i].position.x;
     blobShadows[i].position.z = segments[i].position.z;
     blobShadows[i].scale.set(sf, sf, sf);
-    blobShadows[i].material.opacity = 0.42 * sf;
+    blobShadows[i].material.opacity = 0.30 + 0.14 * (sf - 1);
   }
   if (segments.length){
     segments[0].rotation.set(-dir.y * Math.PI / 2, Math.atan2(dir.x, dir.z), 0);
@@ -458,6 +465,11 @@ function animate(now){
       lanes[li].material.opacity = isDir ? pulse2 * 2.2 : pulse2;
     }
     var fx = cell(foodPos.x), fy = cell(foodPos.y) + 0.5, fz = cell(foodPos.z);
+    var fsf = 1 + (fy - 0.5 + OFF) / N * 0.5;
+    foodBlob.position.x = fx;
+    foodBlob.position.z = fz;
+    foodBlob.scale.set(fsf, fsf, fsf);
+    foodBlob.material.opacity = 0.30 + 0.14 * (fsf - 1);
     for (var fi = 0; fi < fruitLanes.length; fi++){
       var fa = fruitLanes[fi].userData.axis;
       fruitLanes[fi].scale.set(fa.x ? N : 0.7, fa.y ? N : 0.7, fa.z ? N : 0.7);
