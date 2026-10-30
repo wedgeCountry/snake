@@ -36,7 +36,7 @@
 <canvas id="scene"></canvas>
 <div id="hud"><b id="score">0</b> &nbsp;&middot;&nbsp; <span class="best">Rekord: <span id="best">0</span></span> &nbsp;&middot;&nbsp; H&ouml;he: <span id="height">0</span></div>
 <button id="torusBtn" type="button">Torus: Aus</button>
-<div id="hint">Wischen: vor/zur&uuml;ck/links/rechts &middot; Zwei-Finger-Pinch: rauf/runter</div>
+<div id="hint">Wischen entlang der W&uuml;rfelkanten: vor/zur&uuml;ck/links/rechts &middot; Pinch: rauf/runter</div>
 <div id="overlay">
   <h1 id="ovTitle">3D SNAKE</h1>
   <p id="ovMsg">Echtes 3D: Die Schlange kriecht durch einen W&uuml;rfel. Wische zum Steuern, Pinch (zwei Finger auseinander) = runter, zusammen = rauf. Oben rechts kannst du Torus-Modus einschalten (durch die W&auml;nde durchschl&auml;ngeln).</p>
@@ -355,9 +355,12 @@ window.addEventListener('touchend', function(e){
   var ids = Object.keys(touches);
   if (ids.length === 0 && swipeStart && running && !pinched){
     var dx = ended.x - swipeStart.x, dy = ended.y - swipeStart.y;
-    if (Math.max(Math.abs(dx), Math.abs(dy)) < 24){ handleTap(); }
-    else if (Math.abs(dx) > Math.abs(dy)) queueDir(dx > 0 ? {x: 1, y: 0, z: 0} : {x: -1, y: 0, z: 0});
-    else queueDir(dy > 0 ? {x: 0, y: 0, z: 1} : {x: 0, y: 0, z: -1});
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 24){ handleTap(); return; }
+    // Kamera steht auf der 45°-Diagonalen: Wisch-Vektor um 45° drehen,
+    // damit Gesten entlang der sichtbaren Würfelkanten Steuerung erzeugen
+    var wx = dx + dy, wz = dy - dx;
+    if (Math.abs(wx) > Math.abs(wz)) queueDir(wx > 0 ? {x: 1, y: 0, z: 0} : {x: -1, y: 0, z: 0});
+    else queueDir(wz > 0 ? {x: 0, y: 0, z: 1} : {x: 0, y: 0, z: -1});
   }
   if (ids.length < 2) pinchDist = 0;
   if (ids.length === 0){ swipeStart = null; pinched = false; }
