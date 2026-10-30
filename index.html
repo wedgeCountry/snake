@@ -65,7 +65,7 @@ var camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHei
 
 scene.add(new THREE.AmbientLight(0x8899ff, 0.55));
 var sun = new THREE.DirectionalLight(0xffffff, 0.95);
-sun.position.set(N, N * 2.2, N * 0.8);
+sun.position.set(0, N * 3, 0);
 sun.castShadow = true;
 sun.shadow.mapSize.width = 2048;
 sun.shadow.mapSize.height = 2048;
