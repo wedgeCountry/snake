@@ -14,6 +14,7 @@ window.SnakeView = class SnakeView {
     this.scene.background = new THREE.Color(0x0b1020);
     this.scene.fog = new THREE.Fog(0x0b1020, this.N * 3.2, this.N * 7);
     this.camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 300);
+    this.zoomLevel = 1;
 
     this.scene.add(new THREE.AmbientLight(0x8899ff, 0.55));
     const sun = new THREE.DirectionalLight(0xffffff, 0.95);
@@ -157,6 +158,10 @@ window.SnakeView = class SnakeView {
     for (let i = n; i < this.segments.length; i++) { this.segments[i].visible = false; this.blobShadows[i].visible = false; }
   }
 
+  zoomBy(factor) {
+    this.zoomLevel = Math.min(2.2, Math.max(0.5, this.zoomLevel * factor));
+  }
+
   showOverlay(title, msg, cta) {
     this.dom.ovTitle.textContent = title;
     this.dom.ovMsg.textContent = msg;
@@ -235,7 +240,8 @@ window.SnakeView = class SnakeView {
 
     this.boxEdges.material.opacity = vm.torus ? 0.22 : 0.55;
     const sway = Math.sin(now * 0.0002) * 0.6;
-    this.camera.position.set(this.N * 1.35 + sway, this.N * 1.5, this.N * 1.35 - sway);
+    const z = this.zoomLevel;
+    this.camera.position.set((this.N * 1.35 + sway) * z, this.N * 1.5 * z, (this.N * 1.35 - sway) * z);
     this.camera.lookAt(0, 0.5, 0);
     this.renderer.render(this.scene, this.camera);
   }

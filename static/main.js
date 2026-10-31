@@ -19,9 +19,11 @@
   view.dom.torusBtn.addEventListener('pointerdown', (e) => { e.stopPropagation(); vm.toggleTorus(); });
   view.dom.speed.addEventListener('input', (e) => vm.setSpeed(parseInt(e.target.value, 10)));
 
-  /* Touch input: 1 finger swipe (rotated 45°), 2-finger pinch = up/down */
+  /* Touch input: swipe (rotated 45°) = horizontal, single tap = down,
+     double tap = up, pinch/span = camera zoom */
   const touches = {};
   let swipeStart = null, pinchDist = 0, pinched = false;
+  let lastTapTime = 0;
   window.addEventListener('touchstart', (e) => {
     for (const t of e.changedTouches) touches[t.identifier] = { x: t.clientX, y: t.clientY };
     const ids = Object.keys(touches);
@@ -35,15 +37,12 @@
     e.preventDefault();
     for (const t of e.changedTouches) if (touches[t.identifier]) touches[t.identifier] = { x: t.clientX, y: t.clientY };
     const ids = Object.keys(touches);
-    if (ids.length === 2 && vm.running) {
+    if (ids.length === 2) {
       const a = touches[ids[0]], b = touches[ids[1]];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
-      const delta = d - pinchDist;
-      if (Math.abs(delta) >= 28) {
-        vm.queueDirection(delta > 0 ? 'down' : 'up');
-        pinchDist = d;
-        pinched = true;
-      }
+      if (pinchDist > 0) view.zoomBy(d / pinchDist);
+      pinchDist = d;
+      pinched = true;
     }
   }, { passive: false });
   window.addEventListener('touchend', (e) => {
@@ -51,10 +50,24 @@
     const ended = { x: t.clientX, y: t.clientY };
     for (const tt of e.changedTouches) delete touches[tt.identifier];
     const ids = Object.keys(touches);
-    if (ids.length === 0 && swipeStart && vm.running && !pinched) {
+    if (ids.length === 0 && swipeStart && !pinched) {
       const dx = ended.x - swipeStart.x, dy = ended.y - swipeStart.y;
-      if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) { startIfNeeded(); }
-      else {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) {
+        const now = performance.now();
+        if (now - lastTapTime < 300) {
+          lastTapTime = 0;
+          if (vm.running) vm.queueDirection('up');
+          else startIfNeeded();
+        } else {
+          lastTapTime = now;
+          setTimeout(() => {
+            if (performance.now() - lastTapTime >= 300) {
+              if (vm.running) vm.queueDirection('down');
+              else startIfNeeded();
+            }
+          }, 310);
+        }
+      } else if (vm.running) {
         const wx = dx + dy, wz = dy - dx;
         if (Math.abs(wx) > Math.abs(wz)) vm.queueDirection(wx > 0 ? 'right' : 'left');
         else vm.queueDirection(wz > 0 ? 'forward' : 'back');
@@ -72,9 +85,8 @@
     if (map[e.key]) { e.preventDefault(); vm.queueDirection(map[e.key]); }
   });
   window.addEventListener('wheel', (e) => {
-    if (!vm.running) return;
     e.preventDefault();
-    vm.queueDirection(e.deltaY < 0 ? 'down' : 'up');
+    view.zoomBy(e.deltaY < 0 ? 0.9 : 1.1);
   }, { passive: false });
   window.addEventListener('contextmenu', (e) => e.preventDefault());
 
