@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"/>
+<meta name="theme-color" content="#0b1020"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<title>3D Snake</title>
+<link rel="stylesheet" href="/static/style.css"/>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<header id="hud" class="hud">
+  <span class="score"><b id="score">0</b></span>
+  <span class="best">Rekord: <span id="best">0</span></span>
+  <span class="height">H&ouml;he: <span id="height">0</span></span>
+  <button id="torusBtn" type="button" data-bind="torusLabel">Torus: An</button>
+</header>
+
+<footer id="controls" class="controls">
+  <label class="speed">
+    <span>Langsam</span>
+    <input id="speed" type="range" min="60" max="400" step="10" value="260"/>
+    <span>Schnell</span>
+  </label>
+  <p class="hint">Wischen entlang der W&uuml;rfelkanten &middot; Pinch: rauf/runter</p>
+</footer>
+
+<div id="overlay" class="overlay">
+  <h1 id="ovTitle">3D SNAKE</h1>
+  <p id="ovMsg">Echtes 3D: Die Schlange kriecht durch einen W&uuml;rfel. Wische zum Steuern, Pinch (zwei Finger) = rauf/runter.</p>
+  <p class="cta" id="ovCta">Tippen zum Starten</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="/static/api.js"></script>
+<script src="/static/viewmodel.js"></script>
+<script src="/static/view.js"></script>
+<script src="/static/main.js"></script>
+</body>
+</html>
