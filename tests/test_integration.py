@@ -68,7 +68,13 @@ def place(client, snake, direction, food):
 @pytest.mark.parametrize("name", DIRECTION_NAMES)
 def test_movement_all_six_directions(client, name):
     api_new_game(client, torus=True)
-    place(client, [(3, 5, 5), (3, 5, 4), (3, 5, 3)], (0, 0, 1), (0, 0, 0))
+    # initial direction must not be opposite to the tested one;
+    # body extends behind the head along the initial axis
+    initial = (1, 0, 0) if name != "left" else (0, 0, 1)
+    head = (3, 5, 5)
+    body = [head, (head[0] - initial[0], head[1] - initial[1], head[2] - initial[2]),
+            (head[0] - 2 * initial[0], head[1] - 2 * initial[1], head[2] - 2 * initial[2])]
+    place(client, body, initial, (0, 0, 0))
     api_direction(client, name)
     before = api_step(client)
     dx, dy, dz = EXPECTED_DELTA[name]
@@ -105,8 +111,11 @@ def test_eat_fruit_positive_axis(client, axis, vec, food_off):
 ])
 def test_eat_fruit_negative_directions(client, name, vec, food):
     api_new_game(client, torus=True)
-    snake = [(4, 5, 5), (4, 5, 6), (4, 5, 7)]
-    place(client, snake, (0, 0, 1), food)
+    initial = (1, 0, 0) if name != "left" else (0, 1, 0)
+    head = (4, 5, 5)
+    snake = [head, (head[0] - initial[0], head[1] - initial[1], head[2] - initial[2]),
+             (head[0] - 2 * initial[0], head[1] - 2 * initial[1], head[2] - 2 * initial[2])]
+    place(client, snake, initial, food)
     api_direction(client, name)
     result = api_step(client)
     assert result["score"] == 10
