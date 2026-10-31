@@ -17,6 +17,18 @@ from snake.dependencies import override_services
 from snake.models import Cell, Direction
 from snake.services import InMemoryGameService, JsonFileScoreService, JsonFileSettingsService
 
+
+class NoopLoop:
+    """Loop stub: keeps the server-side loop out of integration tests."""
+
+    running = False
+
+    def activate(self) -> None: ...
+
+    async def start(self) -> None: ...
+
+    async def stop(self) -> None: ...
+
 DIRECTION_NAMES = ["left", "right", "up", "down", "forward", "back"]
 EXPECTED_DELTA = {
     "left": (-1, 0, 0), "right": (1, 0, 0),
@@ -32,6 +44,7 @@ def client(tmp_path):
         game=game,
         score=JsonFileScoreService(tmp_path / "scores.json"),
         settings=JsonFileSettingsService(tmp_path / "settings.json"),
+        loop=NoopLoop(),
     )
     with TestClient(app) as c:
         c.game = game

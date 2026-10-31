@@ -8,6 +8,18 @@ from snake.dependencies import override_services
 from snake.services import InMemoryGameService, JsonFileScoreService, JsonFileSettingsService
 
 
+class NoopLoop:
+    """Loop stub: keeps the server-side loop out of API tests."""
+
+    running = False
+
+    def activate(self) -> None: ...
+
+    async def start(self) -> None: ...
+
+    async def stop(self) -> None: ...
+
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     game = InMemoryGameService(rng=random.Random(7))
@@ -16,6 +28,7 @@ def client(tmp_path, monkeypatch):
         game=game,
         score=JsonFileScoreService(tmp_path / "scores.json"),
         settings=JsonFileSettingsService(tmp_path / "settings.json"),
+        loop=NoopLoop(),
     )
     with TestClient(app) as c:
         yield c
@@ -33,8 +46,8 @@ def test_get_state(client):
 def test_post_direction_and_step(client):
     r = client.post("/api/direction", json={"direction": "up"})
     assert r.status_code == 200
-    assert r.json()["direction"] == {"x": 0, "y": 1, "z": 0}
     r = client.post("/api/step")
+    assert r.json()["direction"] == {"x": 0, "y": 1, "z": 0}
     assert r.json()["snake"][0]["y"] == 6
 
 
