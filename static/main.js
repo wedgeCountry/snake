@@ -22,7 +22,7 @@
   /* Touch input: swipe (rotated 45°) = horizontal, single tap = down,
      double tap = up, pinch/span = camera zoom */
   const touches = {};
-  let swipeStart = null, pinchDist = 0, pinched = false;
+  let swipeStart = null, pinchDist = 0, pinched = false, lastMidX = null;
   let lastTapTime = 0;
   window.addEventListener('touchstart', (e) => {
     for (const t of e.changedTouches) touches[t.identifier] = { x: t.clientX, y: t.clientY };
@@ -42,6 +42,10 @@
       const d = Math.hypot(a.x - b.x, a.y - b.y);
       if (pinchDist > 0) view.zoomBy(d / pinchDist);
       pinchDist = d;
+      // two-finger sideways drag orbits the camera around the vertical axis
+      const midX = (a.x + b.x) / 2;
+      if (lastMidX !== null) view.rotateBy((midX - lastMidX) * 0.008);
+      lastMidX = midX;
       pinched = true;
     }
   }, { passive: false });
@@ -77,7 +81,7 @@
         else vm.queueDirection(wz > 0 ? 'forward' : 'back');
       }
     }
-    if (ids.length < 2) pinchDist = 0;
+    if (ids.length < 2) { pinchDist = 0; lastMidX = null; }
     if (ids.length === 0) { swipeStart = null; pinched = false; }
   }, { passive: true });
 

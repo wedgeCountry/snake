@@ -15,6 +15,7 @@ window.SnakeView = class SnakeView {
     this.scene.fog = new THREE.Fog(0x0b1020, this.N * 3.2, this.N * 7);
     this.camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 300);
     this.zoomLevel = 1;
+    this.orbitAngle = Math.PI / 4;
 
     this.scene.add(new THREE.AmbientLight(0x8899ff, 0.55));
     const sun = new THREE.DirectionalLight(0xffffff, 0.95);
@@ -162,6 +163,12 @@ window.SnakeView = class SnakeView {
     this.zoomLevel = Math.min(2.2, Math.max(0.5, this.zoomLevel * factor));
   }
 
+  /* Orbit the camera around the vertical (Y) axis; the cube itself and its
+     world Z axis stay fixed. */
+  rotateBy(deltaAngle) {
+    this.orbitAngle += deltaAngle;
+  }
+
   /* Ground-plane (XZ) basis of the camera: screen-right and screen-forward
      as 2D world vectors. Applying these to a screen-space gesture vector is
      the rotational transform of the cube for any camera yaw. */
@@ -252,9 +259,14 @@ window.SnakeView = class SnakeView {
     });
 
     this.boxEdges.material.opacity = vm.torus ? 0.22 : 0.55;
-    const sway = Math.sin(now * 0.0002) * 0.6;
+    const sway = Math.sin(now * 0.0002) * 0.6 * this.zoomLevel;
     const z = this.zoomLevel;
-    this.camera.position.set((this.N * 1.35 + sway) * z, this.N * 1.5 * z, (this.N * 1.35 - sway) * z);
+    const r = this.N * 1.35;
+    this.camera.position.set(
+      (r * Math.sin(this.orbitAngle) + sway) * z,
+      this.N * 1.5 * z,
+      (r * Math.cos(this.orbitAngle) - sway) * z
+    );
     this.camera.lookAt(0, 0.5, 0);
     this.renderer.render(this.scene, this.camera);
   }
