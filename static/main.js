@@ -68,7 +68,11 @@
           }, 310);
         }
       } else if (vm.running) {
-        const wx = dx + dy, wz = dy - dx;
+        // Rotate the screen-space gesture by the camera's yaw (ground-plane
+        // basis) so swipes align with the cube for any rotation angle.
+        const basis = view.getGroundBasis();
+        const wx = basis.right.x * dx - basis.forward.x * dy;
+        const wz = basis.right.z * dx - basis.forward.z * dy;
         if (Math.abs(wx) > Math.abs(wz)) vm.queueDirection(wx > 0 ? 'right' : 'left');
         else vm.queueDirection(wz > 0 ? 'forward' : 'back');
       }

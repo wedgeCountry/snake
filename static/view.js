@@ -162,6 +162,19 @@ window.SnakeView = class SnakeView {
     this.zoomLevel = Math.min(2.2, Math.max(0.5, this.zoomLevel * factor));
   }
 
+  /* Ground-plane (XZ) basis of the camera: screen-right and screen-forward
+     as 2D world vectors. Applying these to a screen-space gesture vector is
+     the rotational transform of the cube for any camera yaw. */
+  getGroundBasis() {
+    const fwd = new THREE.Vector3();
+    this.camera.getWorldDirection(fwd);
+    const fx = fwd.x, fz = fwd.z;
+    const len = Math.hypot(fx, fz) || 1;
+    const forward = { x: fx / len, z: fz / len };
+    const right = { x: -forward.z, z: forward.x };
+    return { right, forward };
+  }
+
   showOverlay(title, msg, cta) {
     this.dom.ovTitle.textContent = title;
     this.dom.ovMsg.textContent = msg;
