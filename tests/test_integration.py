@@ -16,8 +16,10 @@ from fastapi.testclient import TestClient
 from snake.app import app
 from snake.models import Cell, Direction
 from snake.core.game import InMemoryGameService
+from snake.services.leaderboard import JsonFileLeaderboardService
 from snake.services.score import JsonFileScoreService
 from snake.services.settings import JsonFileSettingsService
+from snake.services.user import CookieUserService
 
 
 class NoopLoop:
@@ -26,6 +28,8 @@ class NoopLoop:
     running = False
 
     def activate(self) -> None: ...
+
+    def set_context(self, user_id, mode) -> None: ...
 
     async def start(self) -> None: ...
 
@@ -45,6 +49,8 @@ def client(tmp_path):
     app.state.game_service = game
     app.state.score_service = JsonFileScoreService(tmp_path / "scores.json")
     app.state.settings_service = JsonFileSettingsService(tmp_path / "settings.json")
+    app.state.user_service = CookieUserService()
+    app.state.leaderboard_service = JsonFileLeaderboardService(tmp_path / "leaderboard.json")
     app.state.game_loop = NoopLoop()
     with TestClient(app) as c:
         c.game = game

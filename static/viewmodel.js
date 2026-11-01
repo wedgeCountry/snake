@@ -7,6 +7,8 @@ window.SnakeViewModel = class SnakeViewModel {
     this.running = false;
     this.started = false;
     this.torus = true;
+    this.mode = 'single';
+    this.leaderboard = [];
     this._pollTimer = null;
     this.onStateChange = () => {};
     this.onGameOver = () => {};
@@ -22,12 +24,19 @@ window.SnakeViewModel = class SnakeViewModel {
     this.onStateChange();
   }
 
-  async start() {
-    this.state = await this.api.newGame(this.torus);
+  async start(mode) {
+    this.mode = mode || 'single';
+    this.state = await this.api.newGame(this.torus, this.mode);
     this.running = true;
     this.started = true;
     this._startPolling();
     this.onStateChange();
+  }
+
+  async loadLeaderboard() {
+    const lb = await this.api.getLeaderboard(this.mode);
+    this.leaderboard = lb.top || [];
+    return this.leaderboard;
   }
 
   async toggleTorus() {

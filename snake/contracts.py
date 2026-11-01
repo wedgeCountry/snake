@@ -31,6 +31,27 @@ class ScoreService(Protocol):
     def submit(self, score: int) -> int: ...  # returns new best
 
 
+class UserService(Protocol):
+    """Cookie-based user identity: each browser gets a unique ID."""
+
+    @property
+    def cookie_name(self) -> str: ...
+
+    def new_id(self) -> str: ...
+
+    def resolve(self, cookie_value: str | None) -> str: ...
+
+
+class LeaderboardService(Protocol):
+    """Per-user maximum scores on the single-play and multiplayer boards."""
+
+    def submit(self, user_id: str, mode: str, score: int) -> int: ...  # returns user's max
+
+    def get_best(self, user_id: str, mode: str) -> int: ...
+
+    def top(self, mode: str, limit: int = 10) -> list[dict]: ...
+
+
 class SettingsService(Protocol):
     """User settings (speed, torus) with persistence."""
 
