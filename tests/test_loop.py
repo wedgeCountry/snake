@@ -4,8 +4,10 @@ import asyncio
 import random
 from pathlib import Path
 
+import pytest
+
 from snake.loop import GameLoop
-from snake.models import Cell, Direction
+from snake.models import APIGameState, Cell, Direction, GameState
 from snake.services import InMemoryGameService, JsonFileScoreService
 
 
@@ -78,6 +80,49 @@ def test_loop_idles_when_not_active(tmp_path: Path):
 
     asyncio.run(run())
     assert game.state().snake[0].x == 3
+
+
+def test_loop_step_with_action(tmp_path: Path):
+    game = make_game()
+    score = JsonFileScoreService(tmp_path / "scores.json")
+    loop = GameLoop(game, score)
+    api_state = loop.step("up")
+    assert isinstance(api_state, APIGameState)
+    assert api_state.direction == Direction(0, 1, 0)
+    assert api_state.snake[0].y == 6
+
+
+def test_loop_step_without_action(tmp_path: Path):
+    game = make_game()
+    score = JsonFileScoreService(tmp_path / "scores.json")
+    loop = GameLoop(game, score)
+    api_state = loop.step(None)
+    assert api_state.direction == Direction(1, 0, 0)
+    assert api_state.snake[0].x == 4
+
+
+def test_loop_step_rejects_invalid_action(tmp_path: Path):
+    game = make_game()
+    score = JsonFileScoreService(tmp_path / "scores.json")
+    loop = GameLoop(game, score)
+    with pytest.raises(ValueError):
+        loop.step("diagonal")
+
+
+def test_api_game_state_snapshot():
+    game = make_game()
+    state = game.state()
+    api = APIGameState.from_state(state)
+    assert api.snake == state.snake
+    assert api.food == state.food
+    assert api.score == state.score
+    assert api.status == "running"
+    d = api.to_dict()
+    assert d["snake"][0] == {"x": 3, "y": 5, "z": 6}
+    assert "food" in d and "status" in d
+    # snapshot is independent of later mutation
+    state.score = 99
+    assert api.score == 0
 
 
 def test_loop_submits_score_on_death(tmp_path: Path):

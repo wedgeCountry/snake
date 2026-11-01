@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 
 from .contracts import GameService, ScoreService
+from .models import APIGameState, Direction
 
 
 class GameLoop:
@@ -23,6 +24,20 @@ class GameLoop:
 
     def activate(self) -> None:
         self._active = True
+
+    def state(self) -> APIGameState:
+        return APIGameState.from_state(self._game.state())
+
+    def step(self, action: str | None = None) -> APIGameState:
+        """Advance the game one step. An optional action (direction name)
+        is queued first and applied by this step."""
+        if action is not None:
+            self._game.set_direction(Direction.from_name(action))
+        state = self._game.step()
+        if state.status != "running":
+            self._active = False
+            self._score.submit(state.score)
+        return APIGameState.from_state(state)
 
     async def start(self) -> None:
         if self.running:
@@ -44,8 +59,5 @@ class GameLoop:
             if not self._active or state.status != "running":
                 await asyncio.sleep(0.25)
                 continue
-            self._game.step()
-            if self._game.state().status != "running":
-                self._active = False
-                self._score.submit(self._game.state().score)
+            self.step()
             await asyncio.sleep(self._game.state().step_time_ms / 1000.0)

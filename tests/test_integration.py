@@ -19,11 +19,21 @@ from snake.services import InMemoryGameService, JsonFileScoreService, JsonFileSe
 
 
 class NoopLoop:
-    """Loop stub: keeps the server-side loop out of integration tests."""
+    """Loop stub: keeps the background loop out of integration tests
+    while still serving /api/step by delegating to the game service."""
 
     running = False
 
+    def __init__(self, game):
+        self._game = game
+
     def activate(self) -> None: ...
+
+    def step(self, action=None):
+        from snake.models import APIGameState, Direction
+        if action is not None:
+            self._game.set_direction(Direction.from_name(action))
+        return APIGameState.from_state(self._game.step())
 
     async def start(self) -> None: ...
 
@@ -44,7 +54,7 @@ def client(tmp_path):
         game=game,
         score=JsonFileScoreService(tmp_path / "scores.json"),
         settings=JsonFileSettingsService(tmp_path / "settings.json"),
-        loop=NoopLoop(),
+        loop=NoopLoop(game),
     )
     with TestClient(app) as c:
         c.game = game

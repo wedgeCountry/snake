@@ -9,11 +9,21 @@ from snake.services import InMemoryGameService, JsonFileScoreService, JsonFileSe
 
 
 class NoopLoop:
-    """Loop stub: keeps the server-side loop out of API tests."""
+    """Loop stub: keeps the background loop out of API tests while
+    still serving /api/step by delegating to the game service."""
 
     running = False
 
+    def __init__(self, game):
+        self._game = game
+
     def activate(self) -> None: ...
+
+    def step(self, action=None):
+        from snake.models import APIGameState, Direction
+        if action is not None:
+            self._game.set_direction(Direction.from_name(action))
+        return APIGameState.from_state(self._game.step())
 
     async def start(self) -> None: ...
 
@@ -28,7 +38,7 @@ def client(tmp_path, monkeypatch):
         game=game,
         score=JsonFileScoreService(tmp_path / "scores.json"),
         settings=JsonFileSettingsService(tmp_path / "settings.json"),
-        loop=NoopLoop(),
+        loop=NoopLoop(game),
     )
     with TestClient(app) as c:
         yield c
@@ -49,6 +59,25 @@ def test_post_direction_and_step(client):
     r = client.post("/api/step")
     assert r.json()["direction"] == {"x": 0, "y": 1, "z": 0}
     assert r.json()["snake"][0]["y"] == 6
+
+
+def test_post_step_with_action(client):
+    r = client.post("/api/step", json={"action": "up"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["direction"] == {"x": 0, "y": 1, "z": 0}
+    assert body["snake"][0]["y"] == 6
+
+
+def test_post_step_without_action(client):
+    r = client.post("/api/step")
+    assert r.status_code == 200
+    assert r.json()["snake"][0]["x"] == 4
+
+
+def test_post_step_rejects_invalid_action(client):
+    r = client.post("/api/step", json={"action": "sideways"})
+    assert r.status_code == 422
 
 
 def test_post_direction_rejects_invalid(client):

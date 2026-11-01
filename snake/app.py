@@ -58,9 +58,16 @@ def post_direction(
     return game.state().to_dict()
 
 
+class StepRequest(BaseModel):
+    action: str | None = Field(default=None, pattern="^(left|right|up|down|forward|back)$")
+
+
 @app.post("/api/step")
-def post_step(game: GameService = Depends(get_game_service)) -> dict:
-    return game.step().to_dict()
+def post_step(
+    req: StepRequest | None = None,
+    loop: GameLoop = Depends(get_game_loop),
+) -> dict:
+    return loop.step(req.action if req else None).to_dict()
 
 
 @app.post("/api/gameover")
