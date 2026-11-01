@@ -1,9 +1,8 @@
 """Pure-Python integration tests for the server-side game loop.
 
-Unlike test_integration.py (which stubs the loop and drives /api/step
-manually), these tests run the real GameLoop via the app lifespan and
-observe the game purely through the HTTP API. Setup may place
-snake/food on the service object; all gameplay happens server-side.
+These tests run the real GameLoop via the app lifespan and observe the
+game purely through the HTTP API. Setup may place snake/food on the
+service object; all gameplay happens server-side.
 """
 
 from __future__ import annotations
@@ -15,7 +14,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from snake.app import app
-from snake.dependencies import override_services
 from snake.loop import GameLoop
 from snake.models import Cell, Direction
 from snake.core.game import InMemoryGameService
@@ -28,12 +26,10 @@ def client(tmp_path):
     game = InMemoryGameService(rng=random.Random(42))
     score = JsonFileScoreService(tmp_path / "scores.json")
     settings = JsonFileSettingsService(tmp_path / "settings.json")
-    override_services(
-        game=game,
-        score=score,
-        settings=settings,
-        loop=GameLoop(game, score),
-    )
+    app.state.game_service = game
+    app.state.score_service = score
+    app.state.settings_service = settings
+    app.state.game_loop = GameLoop(game, score)
     with TestClient(app) as c:
         c.game = game
         c.score = score

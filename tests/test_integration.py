@@ -1,7 +1,8 @@
 """Integration tests: drive the snake only through the real HTTP API.
 
-Setup may place snake/food via the service object, but every move,
-direction change and step goes through the API endpoints.
+Setup may place snake/food via the service object, but every move and
+direction change goes through the API endpoints; stepping is done on
+the game service (the server-side loop's single stepping path).
 """
 
 from __future__ import annotations
@@ -13,7 +14,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from snake.app import app
-from snake.dependencies import override_services
 from snake.models import Cell, Direction
 from snake.core.game import InMemoryGameService
 from snake.services.score import JsonFileScoreService
@@ -21,21 +21,11 @@ from snake.services.settings import JsonFileSettingsService
 
 
 class NoopLoop:
-    """Loop stub: keeps the background loop out of integration tests
-    while still serving /api/step by delegating to the game service."""
+    """Loop stub: keeps the background asyncio task out of integration tests."""
 
     running = False
 
-    def __init__(self, game):
-        self._game = game
-
     def activate(self) -> None: ...
-
-    def step(self, action=None):
-        from snake.models import Direction
-        if action is not None:
-            self._game.set_direction(Direction.from_name(action))
-        return self._game.step().snapshot()
 
     async def start(self) -> None: ...
 
@@ -52,12 +42,10 @@ EXPECTED_DELTA = {
 @pytest.fixture()
 def client(tmp_path):
     game = InMemoryGameService(rng=random.Random(42))
-    override_services(
-        game=game,
-        score=JsonFileScoreService(tmp_path / "scores.json"),
-        settings=JsonFileSettingsService(tmp_path / "settings.json"),
-        loop=NoopLoop(game),
-    )
+    app.state.game_service = game
+    app.state.score_service = JsonFileScoreService(tmp_path / "scores.json")
+    app.state.settings_service = JsonFileSettingsService(tmp_path / "settings.json")
+    app.state.game_loop = NoopLoop()
     with TestClient(app) as c:
         c.game = game
         yield c
@@ -76,7 +64,8 @@ def api_direction(client, name):
 
 
 def api_step(client):
-    r = client.post("/api/step")
+    client.game.step()
+    r = client.get("/api/state")
     assert r.status_code == 200
     return r.json()
 
@@ -180,8 +169,6 @@ def bfs_path(start, goal, blocked, n, torus=False):
 def dir_name_between(a, b, n, torus=False):
     d = (b[0] - a[0], b[1] - a[1], b[2] - a[2])
     if torus:
-        d = tuple((d[i] + n // 2) % n - n // 2 + (n // 2 if (d[i] + n // 2) % n < n // 2 else 0) for i in range(3))
-        # simpler: wrap delta into [-n/2, n/2]
         d = tuple(((d[i] + n) % n) if ((d[i] + n) % n) <= n // 2 else ((d[i] + n) % n) - n for i in range(3))
     return {(-1, 0, 0): "left", (1, 0, 0): "right", (0, 1, 0): "up",
             (0, -1, 0): "down", (0, 0, 1): "forward", (0, 0, -1): "back"}.get(d)
