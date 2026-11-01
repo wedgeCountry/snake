@@ -91,8 +91,7 @@ async def post_new_game(
     loop: GameLoop = Depends(get_game_loop),
 ) -> dict:
     settings.set_torus(req.torus)
-    state = game.new_game(torus=req.torus)
-    state.step_time_ms = settings.get_step_time_ms()
+    state = game.new_game(torus=req.torus, step_time_ms=settings.get_step_time_ms())
     loop.activate()
     if not loop.running:
         await loop.start()

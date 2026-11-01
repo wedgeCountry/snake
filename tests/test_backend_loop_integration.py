@@ -18,7 +18,9 @@ from snake.app import app
 from snake.dependencies import override_services
 from snake.loop import GameLoop
 from snake.models import Cell, Direction
-from snake.services import InMemoryGameService, JsonFileScoreService, JsonFileSettingsService
+from snake.core.game import InMemoryGameService
+from snake.services.score import JsonFileScoreService
+from snake.services.settings import JsonFileSettingsService
 
 
 @pytest.fixture()

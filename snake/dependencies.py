@@ -8,7 +8,9 @@ from fastapi import Depends
 
 from .contracts import GameService, ScoreService, SettingsService
 from .loop import GameLoop
-from .services import InMemoryGameService, JsonFileScoreService, JsonFileSettingsService
+from .core.game import InMemoryGameService
+from .services.score import JsonFileScoreService
+from .services.settings import JsonFileSettingsService
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 

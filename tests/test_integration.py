@@ -15,7 +15,9 @@ from fastapi.testclient import TestClient
 from snake.app import app
 from snake.dependencies import override_services
 from snake.models import Cell, Direction
-from snake.services import InMemoryGameService, JsonFileScoreService, JsonFileSettingsService
+from snake.core.game import InMemoryGameService
+from snake.services.score import JsonFileScoreService
+from snake.services.settings import JsonFileSettingsService
 
 
 class NoopLoop:
@@ -30,10 +32,10 @@ class NoopLoop:
     def activate(self) -> None: ...
 
     def step(self, action=None):
-        from snake.models import APIGameState, Direction
+        from snake.models import Direction
         if action is not None:
             self._game.set_direction(Direction.from_name(action))
-        return APIGameState.from_state(self._game.step())
+        return self._game.step().snapshot()
 
     async def start(self) -> None: ...
 
