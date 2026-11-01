@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import random
 
-from ..models import Cell, Direction, Fruit, FruitKind, GameState
+from ..models import FRUIT_DURATION_S, Cell, Direction, Fruit, FruitKind, GameState
 
 MIN_STEP_MS = 60
 MAX_STEP_MS = 400
@@ -145,6 +145,7 @@ class InMemoryGameService:
             state.status = "dead"
             state.loser = dead[0] if len(dead) == 1 else None
             return state
+        self._age_fruit(state)
         any_eating = False
         for i, new_head in enumerate(new_heads):
             assert new_head is not None
@@ -161,7 +162,21 @@ class InMemoryGameService:
                 state.status = "won"
             else:
                 state.food = self._spawn_fruit(state)
+                state.fruit_age_ms = 0
         return state
+
+    def _age_fruit(self, state: GameState) -> None:
+        """Timed fruit kinds despawn after their duration and respawn."""
+        duration_s = FRUIT_DURATION_S.get(state.food.kind)
+        if duration_s is None:
+            return
+        state.fruit_age_ms += state.step_time_ms
+        if state.fruit_age_ms < duration_s * 1000:
+            return
+        free = self._free_cells(state)
+        if free:
+            state.food = self._spawn_fruit(state)
+            state.fruit_age_ms = 0
 
     def _apply_fruit(self, state: GameState, player: int, kind: FruitKind) -> None:
         if kind == FruitKind.APPLE:

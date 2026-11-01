@@ -2,7 +2,7 @@
 
 import random
 
-from snake.models import Cell, Direction, Fruit, FruitKind
+from snake.models import FRUIT_DURATION_S, Cell, Direction, Fruit, FruitKind
 from snake.core.game import (
     GRID_RESIZE_STEP,
     MAX_GRID_SIZE,
@@ -186,3 +186,60 @@ def test_fruit_cell_assignment_coerces_to_fruit():
     assert isinstance(state.food, Fruit)
     assert state.food.kind == FruitKind.APPLE
     assert state.food.cell == Cell(1, 1, 1)
+
+
+def test_fruit_durations_default_forever_only_for_apple():
+    assert FRUIT_DURATION_S[FruitKind.APPLE] is None
+    for kind in (FruitKind.REVERSE, FruitKind.GROW_GRID, FruitKind.SHRINK_GRID, FruitKind.STAR):
+        assert FRUIT_DURATION_S[kind] == 30.0
+
+
+def test_serialized_fruit_duration():
+    svc = make_service()
+    state = svc.state()
+    d = state.to_dict()
+    assert d["fruitAgeMs"] == 0
+    expected = state.fruit_duration_ms()
+    assert d["fruitDurationMs"] == expected
+    state.food = Fruit(Cell(0, 0, 0), FruitKind.APPLE)
+    assert state.to_dict()["fruitDurationMs"] is None
+
+
+def test_timed_fruit_despawns_after_duration():
+    svc = make_service()
+    state = svc.state()
+    old_food = state.food
+    state.food = Fruit(Cell(0, 0, 0), FruitKind.STAR)
+    state.step_time_ms = 260
+    steps = 0
+    while state.food.kind == FruitKind.STAR and steps < 200:
+        svc.step()
+        state = svc.state()
+        steps += 1
+    # 30s at 260ms/step -> despawn after ~116 steps
+    assert 115 <= steps <= 117
+    assert state.food.cell != Cell(0, 0, 0) or state.food.kind != FruitKind.STAR
+
+
+def test_apple_never_despawns():
+    svc = make_service()
+    state = svc.state()
+    state.food = Fruit(Cell(0, 0, 0), FruitKind.APPLE)
+    state.step_time_ms = 260
+    for _ in range(200):
+        svc.step()
+        assert svc.state().food.cell == Cell(0, 0, 0)
+        assert svc.state().food.kind == FruitKind.APPLE
+
+
+def test_eating_resets_fruit_age():
+    svc = make_service()
+    state = svc.state()
+    state.food = Fruit(Cell(3, 5, 6), FruitKind.STAR)
+    state.fruit_age_ms = 29_000
+    state.snake = [Cell(2, 5, 6), Cell(1, 5, 6), Cell(0, 5, 6)]
+    state.direction = Direction(1, 0, 0)
+    svc.step()
+    state = svc.state()
+    assert state.fruit_age_ms == 0
+    assert state.star_steps[0] == 8

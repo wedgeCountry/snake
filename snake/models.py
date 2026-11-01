@@ -18,6 +18,16 @@ class FruitKind(str, Enum):
     STAR = "star"                # indestructible for a while (can pass through itself)
 
 
+# How long each fruit kind stays on the board before despawning (None = forever).
+FRUIT_DURATION_S: dict[FruitKind, float | None] = {
+    FruitKind.APPLE: None,
+    FruitKind.REVERSE: 30.0,
+    FruitKind.GROW_GRID: 30.0,
+    FruitKind.SHRINK_GRID: 30.0,
+    FruitKind.STAR: 30.0,
+}
+
+
 @dataclass(frozen=True)
 class Direction:
     x: int
@@ -102,6 +112,7 @@ class GameState:
         mode: str = "single",  # single | multi
         loser: int | None = None,  # player index that died, in multi mode
         star_steps: list[int] | None = None,  # remaining indestructible steps per player
+        fruit_age_ms: int = 0,  # how long the current fruit has been on the board
     ) -> None:
         self.grid_size = grid_size
         self.food = food  # property: coerces Cell into Fruit
@@ -114,6 +125,7 @@ class GameState:
         self.mode = mode
         self.loser = loser
         self.star_steps = list(star_steps) if star_steps is not None else [0] * len(self.snakes)
+        self.fruit_age_ms = fruit_age_ms
 
     @property
     def food(self) -> Fruit:
@@ -126,6 +138,10 @@ class GameState:
     @property
     def food_kind(self) -> FruitKind:
         return self.food.kind
+
+    def fruit_duration_ms(self) -> int | None:
+        seconds = FRUIT_DURATION_S.get(self.food.kind)
+        return None if seconds is None else int(seconds * 1000)
 
     @property
     def snake(self) -> list[Cell]:
@@ -171,6 +187,7 @@ class GameState:
             mode=self.mode,
             loser=self.loser,
             star_steps=self.star_steps,
+            fruit_age_ms=self.fruit_age_ms,
         )
 
     def to_dict(self) -> dict:
@@ -189,6 +206,8 @@ class GameState:
             "mode": self.mode,
             "loser": self.loser,
             "starSteps": list(self.star_steps),
+            "fruitAgeMs": self.fruit_age_ms,
+            "fruitDurationMs": self.fruit_duration_ms(),
         }
 
 
