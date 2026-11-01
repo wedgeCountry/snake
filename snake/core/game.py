@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import json
 import random
-from pathlib import Path
 
-from .contracts import GameService, ScoreService, SettingsService
-from .models import Cell, Direction, GameState
+from ..models import Cell, Direction, GameState
 
 MIN_STEP_MS = 60
 MAX_STEP_MS = 400
@@ -20,7 +17,7 @@ class InMemoryGameService:
         self._state: GameState | None = None
         self._dir_queue: list[Direction] = []
 
-    def new_game(self, torus: bool = True, grid_size: int = 10) -> GameState:
+    def new_game(self, torus: bool = True, grid_size: int = 10, step_time_ms: int = DEFAULT_STEP_MS) -> GameState:
         n = grid_size
         mid = n // 2
         snake = [Cell(3, mid, mid + 1), Cell(2, mid, mid + 1), Cell(1, mid, mid + 1)]
@@ -31,7 +28,7 @@ class InMemoryGameService:
             direction=Direction(1, 0, 0),
             food=Cell(0, mid, mid + 1),
             score=0,
-            step_time_ms=DEFAULT_STEP_MS,
+            step_time_ms=step_time_ms,
             torus=torus,
         )
         state.food = self._spawn_food(state)
@@ -102,56 +99,3 @@ class InMemoryGameService:
     def _spawn_food(self, state: GameState) -> Cell:
         free = self._free_cells(state)
         return self._rng.choice(free) if free else state.food
-
-
-class JsonFileScoreService:
-    def __init__(self, path: Path) -> None:
-        self._path = path
-
-    def get_best(self) -> int:
-        try:
-            return int(json.loads(self._path.read_text()).get("best", 0))
-        except (OSError, ValueError, json.JSONDecodeError):
-            return 0
-
-    def submit(self, score: int) -> int:
-        best = max(self.get_best(), score)
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps({"best": best}))
-        return best
-
-
-class JsonFileSettingsService:
-    def __init__(self, path: Path) -> None:
-        self._path = path
-
-    def _load(self) -> dict:
-        try:
-            data = json.loads(self._path.read_text())
-            return data if isinstance(data, dict) else {}
-        except (OSError, ValueError, json.JSONDecodeError):
-            return {}
-
-    def _save(self, data: dict) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(data))
-
-    def get_step_time_ms(self) -> int:
-        v = self._load().get("stepTimeMs", DEFAULT_STEP_MS)
-        return int(min(MAX_STEP_MS, max(MIN_STEP_MS, v)))
-
-    def set_step_time_ms(self, value: int) -> int:
-        v = int(min(MAX_STEP_MS, max(MIN_STEP_MS, value)))
-        data = self._load()
-        data["stepTimeMs"] = v
-        self._save(data)
-        return v
-
-    def get_torus(self) -> bool:
-        return bool(self._load().get("torus", True))
-
-    def set_torus(self, enabled: bool) -> bool:
-        data = self._load()
-        data["torus"] = bool(enabled)
-        self._save(data)
-        return bool(enabled)

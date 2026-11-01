@@ -3,7 +3,7 @@ import random
 import pytest
 
 from snake.models import Cell, Direction, GameState
-from snake.services import InMemoryGameService
+from snake.core.game import InMemoryGameService
 
 
 def make_service(seed: int = 1) -> InMemoryGameService:

@@ -5,13 +5,14 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from .core.game import DEFAULT_STEP_MS
 from .models import Direction, GameState
 
 
 class GameService(Protocol):
     """Core game logic. Pure and fully testable, no I/O."""
 
-    def new_game(self, torus: bool = True, grid_size: int = 10) -> GameState: ...
+    def new_game(self, torus: bool = True, grid_size: int = 10, step_time_ms: int = DEFAULT_STEP_MS) -> GameState: ...
 
     def state(self) -> GameState: ...
 

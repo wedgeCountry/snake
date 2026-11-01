@@ -49,6 +49,8 @@ class Cell:
 
 @dataclass
 class GameState:
+    """Full game state and its API serialization in one place."""
+
     grid_size: int
     snake: list[Cell]
     direction: Direction
@@ -58,35 +60,16 @@ class GameState:
     torus: bool
     status: str = "running"  # running | dead | won
 
-    def to_dict(self) -> dict:
-        return APIGameState.from_state(self).to_dict()
-
-
-@dataclass(frozen=True)
-class APIGameState:
-    """API-facing snapshot of a game: current positions of the full snake
-    and the fruit, plus direction, score and status metadata."""
-
-    grid_size: int
-    snake: list[Cell]
-    direction: Direction
-    food: Cell
-    score: int
-    step_time_ms: int
-    torus: bool
-    status: str
-
-    @classmethod
-    def from_state(cls, state: GameState) -> "APIGameState":
-        return cls(
-            grid_size=state.grid_size,
-            snake=list(state.snake),
-            direction=state.direction,
-            food=state.food,
-            score=state.score,
-            step_time_ms=state.step_time_ms,
-            torus=state.torus,
-            status=state.status,
+    def snapshot(self) -> "GameState":
+        return GameState(
+            grid_size=self.grid_size,
+            snake=list(self.snake),
+            direction=self.direction,
+            food=self.food,
+            score=self.score,
+            step_time_ms=self.step_time_ms,
+            torus=self.torus,
+            status=self.status,
         )
 
     def to_dict(self) -> dict:

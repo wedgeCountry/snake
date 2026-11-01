@@ -4,26 +4,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 from snake.app import app
-from snake.dependencies import override_services
-from snake.services import InMemoryGameService, JsonFileScoreService, JsonFileSettingsService
+from snake.core.game import InMemoryGameService
+from snake.services.score import JsonFileScoreService
+from snake.services.settings import JsonFileSettingsService
 
 
 class NoopLoop:
-    """Loop stub: keeps the background loop out of API tests while
-    still serving /api/step by delegating to the game service."""
+    """Loop stub: keeps the background asyncio task out of API tests."""
 
     running = False
 
-    def __init__(self, game):
-        self._game = game
-
     def activate(self) -> None: ...
-
-    def step(self, action=None):
-        from snake.models import APIGameState, Direction
-        if action is not None:
-            self._game.set_direction(Direction.from_name(action))
-        return APIGameState.from_state(self._game.step())
 
     async def start(self) -> None: ...
 
@@ -31,17 +22,23 @@ class NoopLoop:
 
 
 @pytest.fixture()
-def client(tmp_path, monkeypatch):
+def client(tmp_path):
     game = InMemoryGameService(rng=random.Random(7))
     game.new_game(torus=True, grid_size=10)
-    override_services(
-        game=game,
-        score=JsonFileScoreService(tmp_path / "scores.json"),
-        settings=JsonFileSettingsService(tmp_path / "settings.json"),
-        loop=NoopLoop(game),
-    )
+    app.state.game_service = game
+    app.state.score_service = JsonFileScoreService(tmp_path / "scores.json")
+    app.state.settings_service = JsonFileSettingsService(tmp_path / "settings.json")
+    app.state.game_loop = NoopLoop()
     with TestClient(app) as c:
+        c.game = game
         yield c
+
+
+def api_step(client):
+    client.game.step()
+    r = client.get("/api/state")
+    assert r.status_code == 200
+    return r.json()
 
 
 def test_get_state(client):
@@ -53,31 +50,17 @@ def test_get_state(client):
     assert "best" in body and "stepTimeMs" in body
 
 
-def test_post_direction_and_step(client):
+def test_post_direction_then_step(client):
     r = client.post("/api/direction", json={"direction": "up"})
     assert r.status_code == 200
-    r = client.post("/api/step")
-    assert r.json()["direction"] == {"x": 0, "y": 1, "z": 0}
-    assert r.json()["snake"][0]["y"] == 6
-
-
-def test_post_step_with_action(client):
-    r = client.post("/api/step", json={"action": "up"})
-    assert r.status_code == 200
-    body = r.json()
+    body = api_step(client)
     assert body["direction"] == {"x": 0, "y": 1, "z": 0}
     assert body["snake"][0]["y"] == 6
 
 
-def test_post_step_without_action(client):
-    r = client.post("/api/step")
-    assert r.status_code == 200
-    assert r.json()["snake"][0]["x"] == 4
-
-
-def test_post_step_rejects_invalid_action(client):
-    r = client.post("/api/step", json={"action": "sideways"})
-    assert r.status_code == 422
+def test_step_without_action(client):
+    body = api_step(client)
+    assert body["snake"][0]["x"] == 4
 
 
 def test_post_direction_rejects_invalid(client):
@@ -86,18 +69,12 @@ def test_post_direction_rejects_invalid(client):
 
 
 def test_new_game_resets(client):
-    client.post("/api/step")
+    api_step(client)
     r = client.post("/api/new", json={"torus": False})
     body = r.json()
     assert body["score"] == 0
     assert body["torus"] is False
     assert len(body["snake"]) == 3
-
-
-def test_gameover_submits_score(client):
-    r = client.post("/api/gameover")
-    assert r.status_code == 200
-    assert r.json()["best"] == 0
 
 
 def test_settings_roundtrip(client):

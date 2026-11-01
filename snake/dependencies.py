@@ -1,53 +1,39 @@
-"""Dependency injection wiring. Swap implementations here (e.g. in tests)."""
+"""Dependency providers. Services live on app.state (set in the lifespan);
+tests replace them via app.dependency_overrides."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import Depends
+from fastapi import Request
 
 from .contracts import GameService, ScoreService, SettingsService
+from .core.game import InMemoryGameService
 from .loop import GameLoop
-from .services import InMemoryGameService, JsonFileScoreService, JsonFileSettingsService
+from .services.score import JsonFileScoreService
+from .services.settings import JsonFileSettingsService
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
-_game_service: GameService = InMemoryGameService()
-_score_service: ScoreService = JsonFileScoreService(DATA_DIR / "scores.json")
-_settings_service: SettingsService = JsonFileSettingsService(DATA_DIR / "settings.json")
-_game_loop: GameLoop | None = None
+
+def build_services(data_dir: Path = DATA_DIR) -> tuple[GameService, ScoreService, SettingsService]:
+    game: GameService = InMemoryGameService()
+    score: ScoreService = JsonFileScoreService(data_dir / "scores.json")
+    settings: SettingsService = JsonFileSettingsService(data_dir / "settings.json")
+    return game, score, settings
 
 
-def get_game_service() -> GameService:
-    return _game_service
+def get_game_service(request: Request) -> GameService:
+    return request.app.state.game_service
 
 
-def get_score_service() -> ScoreService:
-    return _score_service
+def get_score_service(request: Request) -> ScoreService:
+    return request.app.state.score_service
 
 
-def get_settings_service() -> SettingsService:
-    return _settings_service
+def get_settings_service(request: Request) -> SettingsService:
+    return request.app.state.settings_service
 
 
-def get_game_loop() -> GameLoop:
-    global _game_loop
-    if _game_loop is None:
-        _game_loop = GameLoop(_game_service, _score_service)
-    return _game_loop
-
-
-def override_services(
-    game: GameService | None = None,
-    score: ScoreService | None = None,
-    settings: SettingsService | None = None,
-    loop: GameLoop | None = None,
-) -> None:
-    global _game_service, _score_service, _settings_service, _game_loop
-    if game is not None:
-        _game_service = game
-    if score is not None:
-        _score_service = score
-    if settings is not None:
-        _settings_service = settings
-    _game_loop = loop
+def get_game_loop(request: Request) -> GameLoop:
+    return request.app.state.game_loop

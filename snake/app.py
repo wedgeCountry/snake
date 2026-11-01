@@ -3,13 +3,13 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
 
 from .contracts import GameService, ScoreService, SettingsService
 from .dependencies import (
+    build_services,
     get_game_loop,
     get_game_service,
     get_score_service,
@@ -17,12 +17,23 @@ from .dependencies import (
 )
 from .loop import GameLoop
 from .models import Direction
+from .schemas import DirectionRequest, NewGameRequest, SettingsRequest
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
+
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
-    loop = get_game_loop()
+async def lifespan(fastapi_app: FastAPI):
+    if not hasattr(fastapi_app.state, "game_service"):
+        game, score, settings = build_services()
+        fastapi_app.state.game_service = game
+        fastapi_app.state.score_service = score
+        fastapi_app.state.settings_service = settings
+    if not hasattr(fastapi_app.state, "game_loop"):
+        fastapi_app.state.game_loop = GameLoop(
+            fastapi_app.state.game_service, fastapi_app.state.score_service
+        )
+    loop = fastapi_app.state.game_loop
     if not loop.running:
         await loop.start()
     yield
@@ -45,10 +56,6 @@ def get_state(
     return state
 
 
-class DirectionRequest(BaseModel):
-    direction: str = Field(pattern="^(left|right|up|down|forward|back)$")
-
-
 @app.post("/api/direction")
 def post_direction(
     req: DirectionRequest,
@@ -56,31 +63,6 @@ def post_direction(
 ) -> dict:
     game.set_direction(Direction.from_name(req.direction))
     return game.state().to_dict()
-
-
-class StepRequest(BaseModel):
-    action: str | None = Field(default=None, pattern="^(left|right|up|down|forward|back)$")
-
-
-@app.post("/api/step")
-def post_step(
-    req: StepRequest | None = None,
-    loop: GameLoop = Depends(get_game_loop),
-) -> dict:
-    return loop.step(req.action if req else None).to_dict()
-
-
-@app.post("/api/gameover")
-def post_gameover(
-    score: ScoreService = Depends(get_score_service),
-    game: GameService = Depends(get_game_service),
-) -> dict:
-    best = score.submit(game.state().score)
-    return {"score": game.state().score, "best": best}
-
-
-class NewGameRequest(BaseModel):
-    torus: bool = True
 
 
 @app.post("/api/new")
@@ -91,17 +73,11 @@ async def post_new_game(
     loop: GameLoop = Depends(get_game_loop),
 ) -> dict:
     settings.set_torus(req.torus)
-    state = game.new_game(torus=req.torus)
-    state.step_time_ms = settings.get_step_time_ms()
+    state = game.new_game(torus=req.torus, step_time_ms=settings.get_step_time_ms())
     loop.activate()
     if not loop.running:
         await loop.start()
     return state.to_dict()
-
-
-class SettingsRequest(BaseModel):
-    step_time_ms: int | None = Field(default=None, ge=60, le=400)
-    torus: bool | None = None
 
 
 @app.post("/api/settings")
