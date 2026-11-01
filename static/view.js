@@ -28,6 +28,7 @@ window.SnakeView = class SnakeView {
     const s = vm.state;
     if (!s) return;
     sc._torus = vm.torus;
+    if (s.gridSize && s.gridSize !== sc.N) sc.setGridSize(s.gridSize);
     const snakes = s.snakes || [s.snake];
     const directions = s.directions || [s.direction];
     const numPlayers = snakes.length;
@@ -72,11 +73,18 @@ window.SnakeView = class SnakeView {
     });
 
     const f = s.food;
+    const style = sc.fruitStyles[f.kind] || sc.fruitStyles.apple;
+    sc.food.material.color.setHex(style.color);
+    sc.food.material.emissive.setHex(style.emissive);
+    sc.foodLight.color.setHex(style.emissive);
     sc.food.position.set(this._cell(f.x), this._cell(f.y) + 0.5, this._cell(f.z));
     sc.foodLight.position.set(this._cell(f.x), this._cell(f.y) + 1.2, this._cell(f.z));
-    const p = 1 + Math.sin(now * 0.005) * 0.15;
+    const starActive = (s.starSteps && s.starSteps[0] > 0);
+    const p = f.kind === 'star' || starActive
+      ? 1.25 + Math.sin(now * 0.008) * 0.3
+      : 1 + Math.sin(now * 0.005) * 0.15;
     sc.food.scale.set(p, p, p);
-    sc.food.rotation.y += 0.003;
+    sc.food.rotation.y += f.kind === 'star' ? 0.012 : 0.003;
     const fx = this._cell(f.x), fy = this._cell(f.y) + 0.5, fz = this._cell(f.z);
     const fsf = 1 + (f.y - (sc.N - 1) / 2 + sc.OFF) / sc.N * 0.5;
     sc.foodBlob.position.x = fx;
