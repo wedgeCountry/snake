@@ -10,6 +10,24 @@ class Axis(str, Enum):
     Z = "z"
 
 
+class FruitKind(str, Enum):
+    APPLE = "apple"              # classic: grow + score
+    REVERSE = "reverse"          # revert direction (safe 180-degree turn)
+    GROW_GRID = "grow_grid"      # expand the grid by 2 per axis
+    SHRINK_GRID = "shrink_grid"  # shrink the grid by 2 per axis
+    STAR = "star"                # indestructible for a while (can pass through itself)
+
+
+# How long each fruit kind stays on the board before despawning (None = forever).
+FRUIT_DURATION_S: dict[FruitKind, float | None] = {
+    FruitKind.APPLE: None,
+    FruitKind.REVERSE: 30.0,
+    FruitKind.GROW_GRID: 30.0,
+    FruitKind.SHRINK_GRID: 30.0,
+    FruitKind.STAR: 30.0,
+}
+
+
 @dataclass(frozen=True)
 class Direction:
     x: int
@@ -47,6 +65,29 @@ class Cell:
         return {"x": self.x, "y": self.y, "z": self.z}
 
 
+@dataclass(frozen=True)
+class Fruit:
+    cell: Cell
+    kind: FruitKind = FruitKind.APPLE
+
+    @property
+    def x(self) -> int:
+        return self.cell.x
+
+    @property
+    def y(self) -> int:
+        return self.cell.y
+
+    @property
+    def z(self) -> int:
+        return self.cell.z
+
+    def to_dict(self) -> dict:
+        d = self.cell.to_dict()
+        d["kind"] = self.kind.value
+        return d
+
+
 class GameState:
     """Full game state and its API serialization in one place.
 
@@ -60,7 +101,7 @@ class GameState:
         grid_size: int,
         snake: list[Cell],
         direction: Direction,
-        food: Cell,
+        food: Fruit | Cell,
         score: int,
         step_time_ms: int,
         torus: bool,
@@ -70,9 +111,11 @@ class GameState:
         scores: list[int] | None = None,
         mode: str = "single",  # single | multi
         loser: int | None = None,  # player index that died, in multi mode
+        star_steps: list[int] | None = None,  # remaining indestructible steps per player
+        fruit_age_ms: int = 0,  # how long the current fruit has been on the board
     ) -> None:
         self.grid_size = grid_size
-        self.food = food
+        self.food = food  # property: coerces Cell into Fruit
         self.step_time_ms = step_time_ms
         self.torus = torus
         self.status = status
@@ -81,6 +124,24 @@ class GameState:
         self.scores = list(scores) if scores is not None else [score]
         self.mode = mode
         self.loser = loser
+        self.star_steps = list(star_steps) if star_steps is not None else [0] * len(self.snakes)
+        self.fruit_age_ms = fruit_age_ms
+
+    @property
+    def food(self) -> Fruit:
+        return self._food
+
+    @food.setter
+    def food(self, value: Fruit | Cell) -> None:
+        self._food = value if isinstance(value, Fruit) else Fruit(value)
+
+    @property
+    def food_kind(self) -> FruitKind:
+        return self.food.kind
+
+    def fruit_duration_ms(self) -> int | None:
+        seconds = FRUIT_DURATION_S.get(self.food.kind)
+        return None if seconds is None else int(seconds * 1000)
 
     @property
     def snake(self) -> list[Cell]:
@@ -125,6 +186,8 @@ class GameState:
             scores=self.scores,
             mode=self.mode,
             loser=self.loser,
+            star_steps=self.star_steps,
+            fruit_age_ms=self.fruit_age_ms,
         )
 
     def to_dict(self) -> dict:
@@ -142,6 +205,9 @@ class GameState:
             "status": self.status,
             "mode": self.mode,
             "loser": self.loser,
+            "starSteps": list(self.star_steps),
+            "fruitAgeMs": self.fruit_age_ms,
+            "fruitDurationMs": self.fruit_duration_ms(),
         }
 
 
