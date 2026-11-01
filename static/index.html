@@ -12,10 +12,12 @@
 <canvas id="scene"></canvas>
 
 <header id="hud" class="hud">
-  <span class="score"><b id="score">0</b></span>
+  <span class="score">P1: <b id="score">0</b></span>
+  <span class="score" style="display:none">P2: <b id="score2">0</b></span>
   <span class="best">Rekord: <span id="best">0</span></span>
   <span class="height">H&ouml;he: <span id="height">0</span></span>
   <button id="torusBtn" type="button" data-bind="torusLabel">Torus: An</button>
+  <button id="modeBtn" type="button">Modus: Single</button>
 </header>
 
 <footer id="controls" class="controls">
@@ -24,7 +26,7 @@
     <input id="speed" type="range" min="60" max="400" step="10" value="260"/>
     <span>Schnell</span>
   </label>
-  <p class="hint">Wischen entlang der Kanten &middot; 1x Tippen: runter &middot; 2x Tippen: rauf &middot; Pinch: Zoom</p>
+  <p class="hint">Wischen entlang der Kanten &middot; 1x Tippen: runter &middot; 2x Tippen: rauf &middot; Pinch: Zoom &middot; Multi: P2 = WASD + Q/E</p>
 </footer>
 
 <div id="overlay" class="overlay">

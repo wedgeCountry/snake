@@ -83,7 +83,7 @@ def post_direction(
     req: DirectionRequest,
     game: GameService = Depends(get_game_service),
 ) -> dict:
-    game.set_direction(Direction.from_name(req.direction))
+    game.set_direction(Direction.from_name(req.direction), player=req.player)
     return game.state().to_dict()
 
 
@@ -99,7 +99,7 @@ async def post_new_game(
     settings.set_torus(req.torus)
     user_id, is_new = _resolve_user(request, user)
     loop.set_context(user_id, req.mode)
-    state = game.new_game(torus=req.torus, step_time_ms=settings.get_step_time_ms())
+    state = game.new_game(torus=req.torus, step_time_ms=settings.get_step_time_ms(), mode=req.mode)
     loop.activate()
     if not loop.running:
         await loop.start()

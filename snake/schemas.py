@@ -11,6 +11,7 @@ LeaderboardMode = Literal["single", "multi"]
 
 class DirectionRequest(BaseModel):
     direction: str = Field(pattern=DIRECTION_PATTERN)
+    player: int = Field(default=0, ge=0, le=1)
 
 
 class NewGameRequest(BaseModel):

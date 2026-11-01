@@ -123,30 +123,43 @@ window.SnakeScene = class SnakeScene {
   _buildSegments() {
     this.segGeo = new THREE.BoxGeometry(0.84, 0.84, 0.84);
     this.headGeo = new THREE.BoxGeometry(0.9, 0.9, 0.9);
-    this.headMat = new THREE.MeshStandardMaterial({ color: 0x7dff9b, emissive: 0x1fae4f, emissiveIntensity: 0.6, roughness: 0.3 });
-    this.segments = [];
-    this.blobShadows = [];
+    // one head material per player (P1 green, P2 orange)
+    this.headMats = [
+      new THREE.MeshStandardMaterial({ color: 0x7dff9b, emissive: 0x1fae4f, emissiveIntensity: 0.6, roughness: 0.3 }),
+      new THREE.MeshStandardMaterial({ color: 0xffb35c, emissive: 0xd97316, emissiveIntensity: 0.6, roughness: 0.3 }),
+    ];
+    this.PLAYER_HUES = [0.36, 0.08]; // body gradient base per player
+    this.segments = [[], []];
+    this.blobShadows = [[], []];
     const blobGeo = new THREE.CircleGeometry(0.42, 24);
-    for (let i = 0; i < 64; i++) {
-      const isHead = i === 0;
-      const m = new THREE.Mesh(isHead ? this.headGeo : this.segGeo, isHead ? this.headMat : new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.1 }));
-      m.castShadow = true;
-      if (isHead) m.rotation.order = 'YXZ';
-      m.visible = false;
-      this.scene.add(m);
-      this.segments.push(m);
-      const b = new THREE.Mesh(blobGeo, new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false }));
-      b.rotation.x = -Math.PI / 2;
-      b.position.y = -this.OFF - 0.5;
-      b.visible = false;
-      this.scene.add(b);
-      this.blobShadows.push(b);
+    for (let p = 0; p < 2; p++) {
+      for (let i = 0; i < 64; i++) {
+        const isHead = i === 0;
+        const m = new THREE.Mesh(isHead ? this.headGeo : this.segGeo, isHead ? this.headMats[p] : new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.1 }));
+        m.castShadow = true;
+        if (isHead) m.rotation.order = 'YXZ';
+        m.visible = false;
+        this.scene.add(m);
+        this.segments[p].push(m);
+        const b = new THREE.Mesh(blobGeo, new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false }));
+        b.rotation.x = -Math.PI / 2;
+        b.position.y = -this.OFF - 0.5;
+        b.visible = false;
+        this.scene.add(b);
+        this.blobShadows[p].push(b);
+      }
     }
   }
 
-  ensureSegments(n) {
-    for (let i = 0; i < n; i++) this.segments[i].visible = true;
-    for (let i = n; i < this.segments.length; i++) { this.segments[i].visible = false; this.blobShadows[i].visible = false; }
+  ensureSegments(player, n) {
+    const segs = this.segments[player] || this.segments[0];
+    const blobs = this.blobShadows[player] || this.blobShadows[0];
+    for (let i = 0; i < n; i++) segs[i].visible = true;
+    for (let i = n; i < segs.length; i++) { segs[i].visible = false; blobs[i].visible = false; }
+  }
+
+  clearSegments() {
+    for (let p = 0; p < this.segments.length; p++) this.ensureSegments(p, 0);
   }
 
   zoomBy(factor) {

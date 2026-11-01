@@ -51,9 +51,14 @@ window.SnakeViewModel = class SnakeViewModel {
     this.onStateChange();
   }
 
-  queueDirection(name) {
+  queueDirection(name, player) {
     if (!this.running) return;
-    this.api.setDirection(name);
+    this.api.setDirection(name, player || 0);
+  }
+
+  async toggleMode() {
+    this.mode = this.mode === 'single' ? 'multi' : 'single';
+    await this.start(this.mode);
   }
 
   _startPolling() {

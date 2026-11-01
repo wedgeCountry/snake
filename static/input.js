@@ -84,6 +84,12 @@ window.SnakeInput = class SnakeInput {
         ArrowUp: 'back', ArrowDown: 'forward', ArrowLeft: 'left', ArrowRight: 'right',
         PageUp: 'up', '+': 'up', '=': 'up', PageDown: 'down', '-': 'down',
       };
+      // Player 2 (multiplayer): WASD + Q/E for up/down
+      const mapP2 = {
+        w: 'back', s: 'forward', a: 'left', d: 'right', q: 'up', e: 'down',
+      };
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      if (mapP2[k] && vm.mode === 'multi') { e.preventDefault(); vm.queueDirection(mapP2[k], 1); return; }
       if (map[e.key]) { e.preventDefault(); vm.queueDirection(map[e.key]); }
     });
     window.addEventListener('wheel', (e) => {

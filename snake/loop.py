@@ -53,7 +53,9 @@ class GameLoop:
             self._active = False
             self._score.submit(state.score)
             if self._leaderboard is not None and self._user_id:
-                self._leaderboard.submit(self._user_id, self._mode, state.score)
+                for i, s in enumerate(state.scores):
+                    player_id = self._user_id if i == 0 else f"{self._user_id}#p{i + 1}"
+                    self._leaderboard.submit(player_id, self._mode, s)
         return state.snapshot()
 
     async def start(self) -> None:
