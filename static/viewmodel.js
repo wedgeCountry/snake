@@ -7,6 +7,8 @@ window.SnakeViewModel = class SnakeViewModel {
     this.running = false;
     this.started = false;
     this.torus = true;
+    this.mode = 'single';
+    this.leaderboard = [];
     this._pollTimer = null;
     this.onStateChange = () => {};
     this.onGameOver = () => {};
@@ -22,12 +24,19 @@ window.SnakeViewModel = class SnakeViewModel {
     this.onStateChange();
   }
 
-  async start() {
-    this.state = await this.api.newGame(this.torus);
+  async start(mode) {
+    this.mode = mode || 'single';
+    this.state = await this.api.newGame(this.torus, this.mode);
     this.running = true;
     this.started = true;
     this._startPolling();
     this.onStateChange();
+  }
+
+  async loadLeaderboard() {
+    const lb = await this.api.getLeaderboard(this.mode);
+    this.leaderboard = lb.top || [];
+    return this.leaderboard;
   }
 
   async toggleTorus() {
@@ -42,9 +51,14 @@ window.SnakeViewModel = class SnakeViewModel {
     this.onStateChange();
   }
 
-  queueDirection(name) {
+  queueDirection(name, player) {
     if (!this.running) return;
-    this.api.setDirection(name);
+    this.api.setDirection(name, player || 0);
+  }
+
+  async toggleMode() {
+    this.mode = this.mode === 'single' ? 'multi' : 'single';
+    await this.start(this.mode);
   }
 
   _startPolling() {

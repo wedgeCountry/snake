@@ -12,11 +12,11 @@ from .models import Direction, GameState
 class GameService(Protocol):
     """Core game logic. Pure and fully testable, no I/O."""
 
-    def new_game(self, torus: bool = True, grid_size: int = 10, step_time_ms: int = DEFAULT_STEP_MS) -> GameState: ...
+    def new_game(self, torus: bool = True, grid_size: int = 10, step_time_ms: int = DEFAULT_STEP_MS, mode: str = "single") -> GameState: ...
 
     def state(self) -> GameState: ...
 
-    def set_direction(self, direction: Direction) -> None: ...
+    def set_direction(self, direction: Direction, player: int = 0) -> None: ...
 
     def step(self) -> GameState: ...
 
@@ -29,6 +29,27 @@ class ScoreService(Protocol):
     def get_best(self) -> int: ...
 
     def submit(self, score: int) -> int: ...  # returns new best
+
+
+class UserService(Protocol):
+    """Cookie-based user identity: each browser gets a unique ID."""
+
+    @property
+    def cookie_name(self) -> str: ...
+
+    def new_id(self) -> str: ...
+
+    def resolve(self, cookie_value: str | None) -> str: ...
+
+
+class LeaderboardService(Protocol):
+    """Per-user maximum scores on the single-play and multiplayer boards."""
+
+    def submit(self, user_id: str, mode: str, score: int) -> int: ...  # returns user's max
+
+    def get_best(self, user_id: str, mode: str) -> int: ...
+
+    def top(self, mode: str, limit: int = 10) -> list[dict]: ...
 
 
 class SettingsService(Protocol):

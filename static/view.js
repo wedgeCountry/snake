@@ -9,7 +9,7 @@ window.SnakeView = class SnakeView {
 
   _cell(c) { return this.scene._cell(c); }
 
-  _ensureSegments(n) { this.scene.ensureSegments(n); }
+  _ensureSegments(player, n) { this.scene.ensureSegments(player, n); }
 
   zoomBy(factor) { this.scene.zoomBy(factor); }
 
@@ -28,28 +28,37 @@ window.SnakeView = class SnakeView {
     const s = vm.state;
     if (!s) return;
     sc._torus = vm.torus;
-    this._ensureSegments(s.snake.length);
-    for (let i = 0; i < s.snake.length; i++) {
-      const seg = s.snake[i];
-      sc.segments[i].position.set(this._cell(seg.x), this._cell(seg.y) + 0.5, this._cell(seg.z));
-      if (i > 0) {
-        const f = i / Math.max(1, s.snake.length - 1);
-        sc.segments[i].material.color.setHSL(0.36 - f * 0.10, 0.85, 0.55 - f * 0.25);
+    const snakes = s.snakes || [s.snake];
+    const directions = s.directions || [s.direction];
+    const numPlayers = snakes.length;
+    sc.clearSegments();
+    for (let p = 0; p < numPlayers; p++) {
+      const snake = snakes[p];
+      const hue = sc.PLAYER_HUES[p % sc.PLAYER_HUES.length];
+      this._ensureSegments(p, snake.length);
+      for (let i = 0; i < snake.length; i++) {
+        const seg = snake[i];
+        sc.segments[p][i].position.set(this._cell(seg.x), this._cell(seg.y) + 0.5, this._cell(seg.z));
+        if (i > 0) {
+          const f = i / Math.max(1, snake.length - 1);
+          sc.segments[p][i].material.color.setHSL(hue - f * 0.10, 0.85, 0.55 - f * 0.25);
+        }
+        const sy = seg.y - (sc.N - 1) / 2;
+        const sf = 1 + (sy + sc.OFF) / sc.N * 0.5;
+        sc.blobShadows[p][i].visible = true;
+        sc.blobShadows[p][i].position.x = sc.segments[p][i].position.x;
+        sc.blobShadows[p][i].position.z = sc.segments[p][i].position.z;
+        sc.blobShadows[p][i].scale.set(sf, sf, sf);
+        sc.blobShadows[p][i].material.opacity = 0.30 + 0.14 * (sf - 1);
       }
-      const sy = seg.y - (sc.N - 1) / 2;
-      const sf = 1 + (sy + sc.OFF) / sc.N * 0.5;
-      sc.blobShadows[i].visible = true;
-      sc.blobShadows[i].position.x = sc.segments[i].position.x;
-      sc.blobShadows[i].position.z = sc.segments[i].position.z;
-      sc.blobShadows[i].scale.set(sf, sf, sf);
-      sc.blobShadows[i].material.opacity = 0.30 + 0.14 * (sf - 1);
+      const d = directions[p] || s.direction;
+      sc.segments[p][0].rotation.set(-d.y * Math.PI / 2, Math.atan2(d.x, d.z), 0);
     }
-    const d = s.direction;
-    sc.segments[0].rotation.set(-d.y * Math.PI / 2, Math.atan2(d.x, d.z), 0);
 
     const pulse = 0.05 + Math.sin(now * 0.004) * 0.02;
-    const h = s.snake[0];
+    const h = snakes[0][0];
     const hx = this._cell(h.x), hy = this._cell(h.y) + 0.5, hz = this._cell(h.z);
+    const d = directions[0] || s.direction;
     sc.lanes.forEach((lane) => {
       const a = lane.userData.axis;
       const isDir = a.x === d.x && a.y === d.y && a.z === d.z;

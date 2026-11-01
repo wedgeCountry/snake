@@ -17,8 +17,10 @@ from snake.app import app
 from snake.loop import GameLoop
 from snake.models import Cell, Direction
 from snake.core.game import InMemoryGameService
+from snake.services.leaderboard import JsonFileLeaderboardService
 from snake.services.score import JsonFileScoreService
 from snake.services.settings import JsonFileSettingsService
+from snake.services.user import CookieUserService
 
 
 @pytest.fixture()
@@ -26,13 +28,18 @@ def client(tmp_path):
     game = InMemoryGameService(rng=random.Random(42))
     score = JsonFileScoreService(tmp_path / "scores.json")
     settings = JsonFileSettingsService(tmp_path / "settings.json")
+    user = CookieUserService()
+    leaderboard = JsonFileLeaderboardService(tmp_path / "leaderboard.json")
     app.state.game_service = game
     app.state.score_service = score
     app.state.settings_service = settings
-    app.state.game_loop = GameLoop(game, score)
+    app.state.user_service = user
+    app.state.leaderboard_service = leaderboard
+    app.state.game_loop = GameLoop(game, score, leaderboard)
     with TestClient(app) as c:
         c.game = game
         c.score = score
+        c.leaderboard = leaderboard
         yield c
 
 

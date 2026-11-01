@@ -7,14 +7,24 @@ from __future__ import annotations
 
 import asyncio
 
-from .contracts import GameService, ScoreService
+from .contracts import GameService, LeaderboardService, ScoreService
 from .models import Direction, GameState
 
 
 class GameLoop:
-    def __init__(self, game: GameService, score: ScoreService) -> None:
+    def __init__(
+        self,
+        game: GameService,
+        score: ScoreService,
+        leaderboard: LeaderboardService | None = None,
+        user_id: str | None = None,
+        mode: str = "single",
+    ) -> None:
         self._game = game
         self._score = score
+        self._leaderboard = leaderboard
+        self._user_id = user_id
+        self._mode = mode
         self._task: asyncio.Task | None = None
         self._active = False
 
@@ -28,6 +38,11 @@ class GameLoop:
     def state(self) -> GameState:
         return self._game.state().snapshot()
 
+    def set_context(self, user_id: str | None, mode: str) -> None:
+        """Set which user/mode the next submitted score is registered for."""
+        self._user_id = user_id
+        self._mode = mode
+
     def step(self, action: str | None = None) -> GameState:
         """Advance the game one step. An optional action (direction name)
         is queued first and applied by this step."""
@@ -37,6 +52,10 @@ class GameLoop:
         if state.status != "running":
             self._active = False
             self._score.submit(state.score)
+            if self._leaderboard is not None and self._user_id:
+                for i, s in enumerate(state.scores):
+                    player_id = self._user_id if i == 0 else f"{self._user_id}#p{i + 1}"
+                    self._leaderboard.submit(player_id, self._mode, s)
         return state.snapshot()
 
     async def start(self) -> None:

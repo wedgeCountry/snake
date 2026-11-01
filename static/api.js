@@ -7,15 +7,16 @@ window.ApiClient = (function () {
   }
   return {
     getState: () => request('/api/state'),
-    newGame: (torus) => request('/api/new', {
+    newGame: (torus, mode) => request('/api/new', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ torus }),
+      body: JSON.stringify({ torus, mode: mode || 'single' }),
     }),
-    setDirection: (direction) => request('/api/direction', {
+    getLeaderboard: (mode) => request('/api/leaderboard/' + (mode || 'single')),
+    setDirection: (direction, player) => request('/api/direction', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ direction }),
+      body: JSON.stringify({ direction, player: player || 0 }),
     }),
     setSettings: (s) => request('/api/settings', {
       method: 'POST',
