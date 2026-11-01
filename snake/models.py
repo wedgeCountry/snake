@@ -143,3 +143,25 @@ class GameState:
             "mode": self.mode,
             "loser": self.loser,
         }
+
+
+class GameSinglePlayerState(GameState):
+    """Single-player view over a (possibly multiplayer) GameState.
+
+    Wraps an existing state and exposes only player 0's snake, direction
+    and score, with mode pinned to "single". Intended for tests that want
+    to assert single-player semantics on any game state.
+    """
+
+    def __init__(self, state: GameState) -> None:
+        super().__init__(
+            grid_size=state.grid_size,
+            snake=state.snakes[0],
+            direction=state.directions[0],
+            food=state.food,
+            score=state.scores[0],
+            step_time_ms=state.step_time_ms,
+            torus=state.torus,
+            status=state.status,
+            mode="single",
+        )
