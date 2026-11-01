@@ -28,11 +28,11 @@ window.SnakeScene = class SnakeScene {
     this.scene.add(sun);
 
     this.fruitStyles = {
-      apple:      { color: 0xff8c1a, emissive: 0xff5500 },
-      reverse:    { color: 0x9b5cff, emissive: 0x6a1fd0 },
-      grow_grid:  { color: 0x4dff88, emissive: 0x12b76a },
-      shrink_grid:{ color: 0xff5c7a, emissive: 0xd0244a },
-      star:       { color: 0xffe14d, emissive: 0xffc400 },
+      apple:      { color: 0xff8c1a, emissive: 0xff5500, label: 'Apfel +10' },
+      reverse:    { color: 0x9b5cff, emissive: 0x6a1fd0, label: 'Umkehr' },
+      grow_grid:  { color: 0x4dff88, emissive: 0x12b76a, label: 'Gitter +2' },
+      shrink_grid:{ color: 0xff5c7a, emissive: 0xd0244a, label: 'Gitter -2' },
+      star:       { color: 0xffe14d, emissive: 0xffc400, label: 'Stern unsterblich' },
     };
 
     this._buildFloor();
@@ -133,11 +133,21 @@ window.SnakeScene = class SnakeScene {
   }
 
   _buildFood() {
-    this.food = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.36, 0),
-      new THREE.MeshStandardMaterial({ color: 0xff8c1a, emissive: 0xff5500, emissiveIntensity: 1.3, roughness: 0.25 })
-    );
-    this.food.castShadow = true;
+    // one mesh per fruit kind; view.js toggles visibility by kind
+    this.food = new THREE.Group();
+    this.fruitMeshes = {
+      apple: new THREE.Mesh(new THREE.IcosahedronGeometry(0.36, 0), new THREE.MeshStandardMaterial({ roughness: 0.25 })),
+      reverse: new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.11, 10, 20), new THREE.MeshStandardMaterial({ roughness: 0.3 })),
+      grow_grid: new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.55), new THREE.MeshStandardMaterial({ roughness: 0.3 })),
+      shrink_grid: new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.55, 4), new THREE.MeshStandardMaterial({ roughness: 0.3 })),
+      star: new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0), new THREE.MeshStandardMaterial({ roughness: 0.2, metalness: 0.3 })),
+    };
+    for (const kind of Object.keys(this.fruitMeshes)) {
+      const m = this.fruitMeshes[kind];
+      m.castShadow = true;
+      m.visible = false;
+      this.food.add(m);
+    }
     this.scene.add(this.food);
     this.foodLight = new THREE.PointLight(0xff7733, 1.2, 10);
     this.scene.add(this.foodLight);

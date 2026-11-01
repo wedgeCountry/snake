@@ -74,8 +74,15 @@ window.SnakeView = class SnakeView {
 
     const f = s.food;
     const style = sc.fruitStyles[f.kind] || sc.fruitStyles.apple;
-    sc.food.material.color.setHex(style.color);
-    sc.food.material.emissive.setHex(style.emissive);
+    for (const kind of Object.keys(sc.fruitMeshes)) {
+      const m = sc.fruitMeshes[kind];
+      m.visible = kind === f.kind;
+      if (m.visible) {
+        m.material.color.setHex(style.color);
+        m.material.emissive.setHex(style.emissive);
+        m.material.emissiveIntensity = 1.3;
+      }
+    }
     sc.foodLight.color.setHex(style.emissive);
     sc.food.position.set(this._cell(f.x), this._cell(f.y) + 0.5, this._cell(f.z));
     sc.foodLight.position.set(this._cell(f.x), this._cell(f.y) + 1.2, this._cell(f.z));
