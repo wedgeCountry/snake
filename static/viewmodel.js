@@ -1,5 +1,5 @@
 /* ViewModel — owns client state. The game loop runs on the server;
-   the client polls /api/state and interpolates for smooth rendering. */
+   the client polls /api/state. */
 window.SnakeViewModel = class SnakeViewModel {
   constructor(api) {
     this.api = api;
@@ -7,9 +7,6 @@ window.SnakeViewModel = class SnakeViewModel {
     this.running = false;
     this.started = false;
     this.torus = true;
-    this._last = 0;
-    this._acc = 0;
-    this._prevSnake = null;
     this._pollTimer = null;
     this.onStateChange = () => {};
     this.onGameOver = () => {};
@@ -27,8 +24,6 @@ window.SnakeViewModel = class SnakeViewModel {
 
   async start() {
     this.state = await this.api.newGame(this.torus);
-    this._prevSnake = null;
-    this._acc = 0;
     this.running = true;
     this.started = true;
     this._startPolling();
@@ -68,19 +63,5 @@ window.SnakeViewModel = class SnakeViewModel {
       this._pollTimer = setTimeout(poll, 80);
     };
     this._pollTimer = setTimeout(poll, 80);
-  }
-
-  /* Advance the loop; returns true while running. */
-  tick(now) {
-    if (!this.running || !this.state) return this.running;
-    const dt = Math.min(100, now - this._last);
-    this._last = now;
-    this._acc += dt;
-    return this.running;
-  }
-
-  interpolation() {
-    if (!this.state) return 1;
-    return this.running ? Math.min(1, this._acc / this.state.stepTimeMs) : 1;
   }
 };
