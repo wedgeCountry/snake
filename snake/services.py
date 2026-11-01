@@ -18,11 +18,13 @@ class InMemoryGameService:
     def __init__(self, rng: random.Random | None = None) -> None:
         self._rng = rng or random.Random()
         self._state: GameState | None = None
+        self._dir_queue: list[Direction] = []
 
     def new_game(self, torus: bool = True, grid_size: int = 10) -> GameState:
         n = grid_size
         mid = n // 2
         snake = [Cell(3, mid, mid + 1), Cell(2, mid, mid + 1), Cell(1, mid, mid + 1)]
+        self._dir_queue = []
         state = GameState(
             grid_size=n,
             snake=snake,
@@ -43,15 +45,21 @@ class InMemoryGameService:
 
     def set_direction(self, direction: Direction) -> None:
         state = self.state()
-        last = state.direction
+        last = self._dir_queue[-1] if self._dir_queue else state.direction
         if direction == last or direction.is_opposite(last):
             return
-        state.direction = direction
+        if len(self._dir_queue) < 4:
+            self._dir_queue.append(direction)
+
+    def _drain_direction(self, state: GameState) -> None:
+        if self._dir_queue:
+            state.direction = self._dir_queue.pop(0)
 
     def step(self) -> GameState:
         state = self.state()
         if state.status != "running":
             return state
+        self._drain_direction(state)
         n = state.grid_size
         head = state.snake[0]
         d = state.direction
