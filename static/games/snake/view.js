@@ -1,5 +1,5 @@
 /* View — pure rendering of ViewModel state into the Three.js scene. */
-window.SnakeView = class SnakeView {
+window.GameView_snake = window.SnakeView = class SnakeView {
   constructor(canvas) {
     this.scene = new SnakeScene(canvas);
     this.hud = new SnakeHud();
@@ -18,6 +18,10 @@ window.SnakeView = class SnakeView {
   getGroundBasis() { return this.scene.getGroundBasis(); }
 
   showOverlay(title, msg, cta) { this.hud.showOverlay(title, msg, cta); }
+
+  dispose() {
+    if (this.scene && this.scene.dispose) this.scene.dispose();
+  }
 
   hideOverlay() { this.hud.hideOverlay(); }
 

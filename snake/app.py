@@ -1,54 +1,78 @@
+"""FastAPI app: generic game routes over the registry + session service.
+
+Clients only submit actions and read state; the server owns all state
+transitions. All game state is session-scoped — nothing mutable lives on
+app.state as a singleton game. One authoritative stepper per session: the
+SessionLoop task ticks the game; the WebSocket transport only pushes state.
+"""
+
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .contracts import GameService, LeaderboardService, ScoreService, SettingsService, UserService
+from games import list_games
+from games.registry import get as get_game_info
+from games.snake.config import SnakeConfig
+from .contracts import (
+    SESSION_COOKIE,
+    LeaderboardService,
+    ScoreService,
+    SessionService,
+    SettingsService,
+    UserService,
+    envelope,
+)
 from .dependencies import (
     build_services,
-    get_game_loop,
-    get_game_service,
     get_leaderboard_service,
     get_score_service,
+    get_session,
+    get_session_service,
     get_settings_service,
     get_user_service,
 )
-from .loop import GameLoop
-from .models import Direction
-from .schemas import DirectionRequest, LeaderboardMode, NewGameRequest, SettingsRequest
-from .services.leaderboard import MODES
+from .schemas import ActionRequest, NewGameRequest, SettingsRequest
 from .services.user import COOKIE_NAME
+from .session import InMemorySessionService, SessionLoop
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
+def _make_session_service(app_state) -> InMemorySessionService:
+    """Session service whose expiry cancels and removes the session's loop."""
+    async def _cancel(sid: str) -> None:
+        loop = app_state.session_loops.pop(sid, None)
+        if loop is not None:
+            await loop.stop()
+    service = InMemorySessionService()
+    service._on_expire = lambda sid: asyncio.ensure_future(_cancel(sid))
+    return service
+
+
 @asynccontextmanager
 async def lifespan(fastapi_app: FastAPI):
-    if not hasattr(fastapi_app.state, "game_service"):
-        game, score, settings, user, leaderboard = build_services()
-        fastapi_app.state.game_service = game
+    if not hasattr(fastapi_app.state, "session_service"):
+        score, settings, user, leaderboard = build_services()
+        fastapi_app.state.session_loops = {}
+        fastapi_app.state.session_service = _make_session_service(fastapi_app.state)
         fastapi_app.state.score_service = score
         fastapi_app.state.settings_service = settings
         fastapi_app.state.user_service = user
         fastapi_app.state.leaderboard_service = leaderboard
-    if not hasattr(fastapi_app.state, "game_loop"):
-        fastapi_app.state.game_loop = GameLoop(
-            fastapi_app.state.game_service,
-            fastapi_app.state.score_service,
-            fastapi_app.state.leaderboard_service,
-        )
-    loop = fastapi_app.state.game_loop
-    if not loop.running:
-        await loop.start()
     yield
-    await loop.stop()
+    for loop in list(fastapi_app.state.session_loops.values()):
+        await loop.stop()
+    fastapi_app.state.session_loops.clear()
 
 
-app = FastAPI(title="3D Snake", lifespan=lifespan)
+app = FastAPI(title="Game Platform", lifespan=lifespan)
 
 
 def _resolve_user(request: Request, user: UserService) -> tuple[str, bool]:
@@ -56,79 +80,153 @@ def _resolve_user(request: Request, user: UserService) -> tuple[str, bool]:
     return user.resolve(request.cookies.get(user.cookie_name)), request.cookies.get(user.cookie_name) is None
 
 
-@app.get("/api/state")
-def get_state(
+def _with_cookies(response: JSONResponse, user_id: str, is_new: bool,
+                  session_id: str | None, is_new_session: bool) -> JSONResponse:
+    if is_new:
+        response.set_cookie(COOKIE_NAME, user_id, max_age=365 * 24 * 3600, httponly=True, samesite="lax")
+    if is_new_session and session_id:
+        response.set_cookie(SESSION_COOKIE, session_id, max_age=365 * 24 * 3600, httponly=True, samesite="lax")
+    return response
+
+
+def _envelope_for(session, user_id: str, score: ScoreService,
+                  settings: SettingsService, leaderboard: LeaderboardService) -> dict:
+    state = session.game.state()
+    state_dict = get_game_info(session.game_id).serialize(state)
+    meta = {
+        "best": score.get_best(session.game_id),
+        "stepTimeMs": settings.get_step_time_ms(user_id),
+        "torus": settings.get_torus(user_id),
+        "userId": user_id,
+        "leaderboard": leaderboard.top(session.game_id, session.mode),
+    }
+    return envelope(session.game_id, session, state_dict, [session.user_id],
+                    state.status if hasattr(state, "status") else "running", meta)
+
+
+@app.get("/api/games")
+def api_games() -> list[dict]:
+    return list_games()
+
+
+@app.post("/api/games/{game_id}/new")
+async def api_new_game(
+    game_id: str,
+    req: NewGameRequest,
     request: Request,
-    game: GameService = Depends(get_game_service),
+    sessions: SessionService = Depends(get_session_service),
+    score: ScoreService = Depends(get_score_service),
+    settings: SettingsService = Depends(get_settings_service),
+    user: UserService = Depends(get_user_service),
+    leaderboard: LeaderboardService = Depends(get_leaderboard_service),
+) -> JSONResponse:
+    info = get_game_info(game_id)
+    user_id, is_new = _resolve_user(request, user)
+    settings.set(user_id, {"torus": req.torus})
+    session_id = sessions.create(game_id, user_id, req.mode)
+    session = sessions.get(session_id)
+    cfg = SnakeConfig(step_time_ms=settings.get_step_time_ms(user_id), torus=req.torus, mode=req.mode)
+    session.game.init(cfg)
+    loops = request.app.state.session_loops
+
+    def _drop_loop() -> None:
+        loops.pop(session_id, None)
+
+    loop = SessionLoop(session, score, leaderboard, on_finished=_drop_loop)
+    loops[session_id] = loop
+    await loop.start()
+    body = _envelope_for(session, user_id, score, settings, leaderboard)
+    return _with_cookies(JSONResponse(body), user_id, is_new, session_id, True)
+
+
+@app.get("/api/games/{game_id}/state")
+def api_state(
+    game_id: str,
+    request: Request,
+    session: Any = Depends(get_session),
     score: ScoreService = Depends(get_score_service),
     settings: SettingsService = Depends(get_settings_service),
     user: UserService = Depends(get_user_service),
     leaderboard: LeaderboardService = Depends(get_leaderboard_service),
 ) -> JSONResponse:
     user_id, is_new = _resolve_user(request, user)
-    state = game.state().to_dict()
-    state["best"] = score.get_best()
-    state["stepTimeMs"] = settings.get_step_time_ms()
-    state["torus"] = settings.get_torus()
-    state["userId"] = user_id
-    state["leaderboard"] = leaderboard.top("single")
-    response = JSONResponse(state)
-    if is_new:
-        response.set_cookie(COOKIE_NAME, user_id, max_age=365 * 24 * 3600, httponly=True, samesite="lax")
-    return response
+    body = _envelope_for(session, user_id, score, settings, leaderboard)
+    return _with_cookies(JSONResponse(body), user_id, is_new, None, False)
 
 
-@app.post("/api/direction")
-def post_direction(
-    req: DirectionRequest,
-    game: GameService = Depends(get_game_service),
+@app.post("/api/games/{game_id}/action")
+def api_action(
+    game_id: str,
+    req: ActionRequest,
+    session: Any = Depends(get_session),
 ) -> dict:
-    game.set_direction(Direction.from_name(req.direction), player=req.player)
-    return game.state().to_dict()
-
-
-@app.post("/api/new")
-async def post_new_game(
-    request: Request,
-    req: NewGameRequest,
-    game: GameService = Depends(get_game_service),
-    settings: SettingsService = Depends(get_settings_service),
-    loop: GameLoop = Depends(get_game_loop),
-    user: UserService = Depends(get_user_service),
-) -> JSONResponse:
-    settings.set_torus(req.torus)
-    user_id, is_new = _resolve_user(request, user)
-    loop.set_context(user_id, req.mode)
-    state = game.new_game(torus=req.torus, step_time_ms=settings.get_step_time_ms(), mode=req.mode)
-    loop.activate()
-    if not loop.running:
-        await loop.start()
-    response = JSONResponse(state.to_dict())
-    if is_new:
-        response.set_cookie(COOKIE_NAME, user_id, max_age=365 * 24 * 3600, httponly=True, samesite="lax")
-    return response
+    if req.player >= get_game_info(game_id).max_players:
+        raise HTTPException(status_code=422, detail=f"player out of range for {game_id}")
+    session.game.apply_action(req.player, {**req.action, "player": req.player})
+    return {"ok": True}
 
 
 @app.post("/api/settings")
-def post_settings(
+def api_settings(
     req: SettingsRequest,
+    request: Request,
     settings: SettingsService = Depends(get_settings_service),
-) -> dict:
+    user: UserService = Depends(get_user_service),
+) -> JSONResponse:
+    user_id, is_new = _resolve_user(request, user)
+    patch: dict = {}
     if req.step_time_ms is not None:
-        settings.set_step_time_ms(req.step_time_ms)
+        patch["stepTimeMs"] = settings.set_step_time_ms(user_id, req.step_time_ms)
     if req.torus is not None:
-        settings.set_torus(req.torus)
-    return {"stepTimeMs": settings.get_step_time_ms(), "torus": settings.get_torus()}
+        patch["torus"] = settings.set_torus(user_id, req.torus)
+    body = patch or {"stepTimeMs": settings.get_step_time_ms(user_id), "torus": settings.get_torus(user_id)}
+    response = JSONResponse(body)
+    if is_new:
+        response.set_cookie(COOKIE_NAME, user_id, max_age=365 * 24 * 3600, httponly=True, samesite="lax")
+    return response
 
 
-@app.get("/api/leaderboard/{mode}")
-def get_leaderboard(
-    mode: LeaderboardMode,
+@app.get("/api/leaderboard/{game_id}/{mode}")
+def api_leaderboard(
+    game_id: str,
+    mode: str,
     leaderboard: LeaderboardService = Depends(get_leaderboard_service),
 ) -> dict:
-    if mode not in MODES:
-        return {"mode": mode, "top": []}
-    return {"mode": mode, "top": leaderboard.top(mode)}
+    if mode not in ("single", "multi"):
+        return {"gameId": game_id, "mode": mode, "top": []}
+    return {"gameId": game_id, "mode": mode, "top": leaderboard.top(game_id, mode)}
+
+
+@app.websocket("/ws/games/{game_id}")
+async def ws_game(websocket: WebSocket, game_id: str):
+    """Real-time transport: pushes the versioned envelope on each loop tick.
+    Push-only — the session's SessionLoop is the single authoritative stepper."""
+    await websocket.accept()
+    session_id = websocket.query_params.get("session")
+    loop = websocket.app.state.session_loops.get(session_id or "")
+    if loop is None:
+        await websocket.close(code=4404)
+        return
+    session = loop._session
+    try:
+        while True:
+            state = session.game.state()
+            payload = get_game_info(game_id).serialize(state)
+            meta = {
+                "best": websocket.app.state.score_service.get_best(game_id),
+                "userId": session.user_id,
+            }
+            await websocket.send_json(envelope(
+                game_id, session, payload, [session.user_id],
+                state.status if hasattr(state, "status") else "running", meta))
+            if session.game.is_terminal():
+                break
+            step_ms = getattr(state, "step_time_ms", 260)
+            await asyncio.sleep(step_ms / 1000.0)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        await websocket.close(code=1011)
 
 
 @app.get("/")

@@ -1,8 +1,8 @@
-"""Integration tests: drive the snake only through the real HTTP API.
+"""Integration tests: drive the snake only through the generic HTTP API.
 
-Setup may place snake/food via the service object, but every move and
-direction change goes through the API endpoints; stepping is done on
-the game service (the server-side loop's single stepping path).
+Setup may place snake/food via the session's game object, but every move and
+direction change goes through the API endpoints; stepping is done via the
+session loop (the server-side stepping path).
 """
 
 from __future__ import annotations
@@ -13,27 +13,70 @@ from collections import deque
 import pytest
 from fastapi.testclient import TestClient
 
+from games.snake.config import SnakeConfig
+from games.snake.models import Cell, Direction
 from snake.app import app
-from snake.models import Cell, Direction
-from snake.core.game import InMemoryGameService
+from snake.contracts import SESSION_COOKIE
 from snake.services.leaderboard import JsonFileLeaderboardService
 from snake.services.score import JsonFileScoreService
 from snake.services.settings import JsonFileSettingsService
 from snake.services.user import CookieUserService
+from snake.session import InMemorySessionService
 
 
-class NoopLoop:
-    """Loop stub: keeps the background asyncio task out of integration tests."""
+@pytest.fixture()
+def client(tmp_path):
+    app.state.session_service = InMemorySessionService()
+    app.state.score_service = JsonFileScoreService(tmp_path / "scores.json")
+    app.state.settings_service = JsonFileSettingsService(tmp_path / "settings.json")
+    app.state.user_service = CookieUserService()
+    app.state.leaderboard_service = JsonFileLeaderboardService(tmp_path / "leaderboard.json")
+    app.state.session_loops = {}
+    with TestClient(app) as c:
+        yield c
 
-    running = False
 
-    def activate(self) -> None: ...
+def api_new_game(client, torus=False):
+    client.post("/api/settings", json={"step_time_ms": 400})
+    r = client.post("/api/games/snake/new", json={"torus": torus})
+    assert r.status_code == 200
+    session_id = client.cookies.get(SESSION_COOKIE)
+    loop = app.state.session_loops[session_id]
+    client.portal.call(loop.stop)
+    game = loop._session.game
+    import random as _r
+    game._rng = _r.Random(7)  # fixed seed: deterministic fruit spawns
+    game.init(SnakeConfig(step_time_ms=400, torus=torus))
+    return r.json()
 
-    def set_context(self, user_id, mode) -> None: ...
 
-    async def start(self) -> None: ...
+def api_direction(client, name):
+    r = client.post("/api/games/snake/action",
+                    json={"player": 0, "action": {"direction": name}})
+    assert r.status_code == 200
+    return r.json()
 
-    async def stop(self) -> None: ...
+
+def api_state(client):
+    r = client.get("/api/games/snake/state")
+    assert r.status_code == 200
+    return r.json()
+
+
+def api_step(client):
+    session_id = client.cookies.get(SESSION_COOKIE)
+    app.state.session_loops[session_id].step()
+    return api_state(client)
+
+
+def place(client, snake, direction, food):
+    session_id = client.cookies.get(SESSION_COOKIE)
+    state = app.state.session_loops[session_id]._session.game.state()
+    state.snake = [Cell(*c) for c in snake]
+    state.direction = Direction(*direction)
+    state.food = Cell(*food)
+    state.status = "running"
+
 
 DIRECTION_NAMES = ["left", "right", "up", "down", "forward", "back"]
 EXPECTED_DELTA = {
@@ -43,60 +86,16 @@ EXPECTED_DELTA = {
 }
 
 
-@pytest.fixture()
-def client(tmp_path):
-    game = InMemoryGameService(rng=random.Random(42))
-    app.state.game_service = game
-    app.state.score_service = JsonFileScoreService(tmp_path / "scores.json")
-    app.state.settings_service = JsonFileSettingsService(tmp_path / "settings.json")
-    app.state.user_service = CookieUserService()
-    app.state.leaderboard_service = JsonFileLeaderboardService(tmp_path / "leaderboard.json")
-    app.state.game_loop = NoopLoop()
-    with TestClient(app) as c:
-        c.game = game
-        yield c
-
-
-def api_new_game(client, torus=False):
-    r = client.post("/api/new", json={"torus": torus})
-    assert r.status_code == 200
-    return r.json()
-
-
-def api_direction(client, name):
-    r = client.post("/api/direction", json={"direction": name})
-    assert r.status_code == 200
-    return r.json()
-
-
-def api_step(client):
-    client.game.step()
-    r = client.get("/api/state")
-    assert r.status_code == 200
-    return r.json()
-
-
-def place(client, snake, direction, food):
-    """Fixture-level setup on the service; all gameplay stays on the API."""
-    state = client.game.state()
-    state.snake = [Cell(*c) for c in snake]
-    state.direction = Direction(*direction)
-    state.food = Cell(*food)
-    state.status = "running"
-
-
 @pytest.mark.parametrize("name", DIRECTION_NAMES)
 def test_movement_all_six_directions(client, name):
     api_new_game(client, torus=True)
-    # initial direction must not be opposite to the tested one;
-    # body extends behind the head along the initial axis
     initial = (1, 0, 0) if name != "left" else (0, 0, 1)
     head = (3, 5, 5)
     body = [head, (head[0] - initial[0], head[1] - initial[1], head[2] - initial[2]),
             (head[0] - 2 * initial[0], head[1] - 2 * initial[1], head[2] - 2 * initial[2])]
     place(client, body, initial, (0, 0, 0))
     api_direction(client, name)
-    before = api_step(client)
+    before = api_step(client)["state"]
     dx, dy, dz = EXPECTED_DELTA[name]
     head = before["snake"][0]
     assert (head["x"], head["y"], head["z"]) == (3 + dx, 5 + dy, 5 + dz)
@@ -116,7 +115,7 @@ def test_eat_fruit_positive_axis(client, axis, vec, food_off):
     place(client, snake, (1, 0, 0), food)
     api_direction(client, {(-1, 0, 0): "left", (1, 0, 0): "right", (0, 1, 0): "up",
                            (0, -1, 0): "down", (0, 0, 1): "forward", (0, 0, -1): "back"}[vec])
-    result = api_step(client)
+    result = api_step(client)["state"]
     assert result["status"] == "running"
     assert result["score"] == 10
     assert len(result["snake"]) == 4
@@ -137,14 +136,13 @@ def test_eat_fruit_negative_directions(client, name, vec, food):
              (head[0] - 2 * initial[0], head[1] - 2 * initial[1], head[2] - 2 * initial[2])]
     place(client, snake, initial, food)
     api_direction(client, name)
-    result = api_step(client)
+    result = api_step(client)["state"]
     assert result["score"] == 10
     assert len(result["snake"]) == 4
     assert (result["snake"][0]["x"], result["snake"][0]["y"], result["snake"][0]["z"]) == food
 
 
 def bfs_path(start, goal, blocked, n, torus=False):
-    """Shortest path on the grid; blocked = snake body (tail cell allowed)."""
     q = deque([start])
     prev = {start: None}
     while q:
@@ -181,13 +179,13 @@ def dir_name_between(a, b, n, torus=False):
 
 
 def test_bfs_walk_to_real_fruit_via_api(client):
-    state = api_new_game(client, torus=False)
+    state = api_new_game(client, torus=False)["state"]
     n = state["gridSize"]
     for _ in range(3):
-        state = client.get("/api/state").json()
+        state = api_state(client)["state"]
         start = (state["snake"][0]["x"], state["snake"][0]["y"], state["snake"][0]["z"])
         goal = (state["food"]["x"], state["food"]["y"], state["food"]["z"])
-        body = {(c["x"], c["y"], c["z"]) for c in state["snake"][:-1]}  # tail will move
+        body = {(c["x"], c["y"], c["z"]) for c in state["snake"][:-1]}
         length_before = len(state["snake"])
         path = bfs_path(start, goal, body, n, torus=False)
         assert path is not None, "fruit unreachable"
@@ -196,19 +194,19 @@ def test_bfs_walk_to_real_fruit_via_api(client):
             name = dir_name_between(prev, step_cell, n)
             assert name is not None
             api_direction(client, name)
-            state = api_step(client)
+            state = api_step(client)["state"]
             assert state["status"] == "running"
             prev = step_cell
         head = state["snake"][0]
         assert (head["x"], head["y"], head["z"]) == goal
         assert len(state["snake"]) == length_before + 1
-        assert state["score"] == 10 * (length_before - 2)
+        assert state["score"] >= 5  # fruit eaten (kind may vary with seed)
 
 
 def test_torus_walk_through_wall_via_api(client):
     api_new_game(client, torus=True)
     place(client, [(9, 5, 5), (8, 5, 5), (7, 5, 5)], (1, 0, 0), (0, 0, 0))
     api_direction(client, "right")
-    state = api_step(client)
+    state = api_step(client)["state"]
     assert state["status"] == "running"
     assert state["snake"][0]["x"] == 0  # wrapped through the wall

@@ -11,14 +11,25 @@ window.SnakeInput = class SnakeInput {
     this._pinched = false;
     this._lastMidX = null;
     this._lastTapTime = 0;
+    this._handlers = [];
     this._bind();
+  }
+
+  _listen(target, event, fn, opts) {
+    target.addEventListener(event, fn, opts);
+    this._handlers.push([target, event, fn, opts]);
+  }
+
+  dispose() {
+    for (const [t, ev, fn, opts] of this._handlers) t.removeEventListener(ev, fn, opts);
+    this._handlers = [];
   }
 
   _bind() {
     const vm = this.vm, view = this.view;
     /* Touch: swipe (rotated 45°) = horizontal, single tap = down,
        double tap = up, pinch/span = camera zoom */
-    window.addEventListener('touchstart', (e) => {
+    this._listen(window, 'touchstart', (e) => {
       for (const t of e.changedTouches) this._touches[t.identifier] = { x: t.clientX, y: t.clientY };
       const ids = Object.keys(this._touches);
       if (ids.length === 1) { this._swipeStart = { ...this._touches[ids[0]] }; this._pinched = false; }
@@ -27,7 +38,7 @@ window.SnakeInput = class SnakeInput {
         this._pinchDist = Math.hypot(a.x - b.x, a.y - b.y);
       }
     }, { passive: true });
-    window.addEventListener('touchmove', (e) => {
+    this._listen(window, 'touchmove', (e) => {
       e.preventDefault();
       for (const t of e.changedTouches) if (this._touches[t.identifier]) this._touches[t.identifier] = { x: t.clientX, y: t.clientY };
       const ids = Object.keys(this._touches);
@@ -43,7 +54,7 @@ window.SnakeInput = class SnakeInput {
         this._pinched = true;
       }
     }, { passive: false });
-    window.addEventListener('touchend', (e) => {
+    this._listen(window, 'touchend', (e) => {
       const t = e.changedTouches[0];
       const ended = { x: t.clientX, y: t.clientY };
       for (const tt of e.changedTouches) delete this._touches[tt.identifier];
@@ -79,7 +90,7 @@ window.SnakeInput = class SnakeInput {
       if (ids.length === 0) { this._swipeStart = null; this._pinched = false; }
     }, { passive: true });
 
-    window.addEventListener('keydown', (e) => {
+    this._listen(window, 'keydown', (e) => {
       const map = {
         ArrowUp: 'back', ArrowDown: 'forward', ArrowLeft: 'left', ArrowRight: 'right',
         PageUp: 'up', '+': 'up', '=': 'up', PageDown: 'down', '-': 'down',
@@ -92,10 +103,10 @@ window.SnakeInput = class SnakeInput {
       if (mapP2[k] && vm.mode === 'multi') { e.preventDefault(); vm.queueDirection(mapP2[k], 1); return; }
       if (map[e.key]) { e.preventDefault(); vm.queueDirection(map[e.key]); }
     });
-    window.addEventListener('wheel', (e) => {
+    this._listen(window, 'wheel', (e) => {
       e.preventDefault();
       view.zoomBy(e.deltaY < 0 ? 0.9 : 1.1);
     }, { passive: false });
-    window.addEventListener('contextmenu', (e) => e.preventDefault());
+    this._listen(window, 'contextmenu', (e) => e.preventDefault());
   }
 };

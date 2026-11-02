@@ -5,23 +5,28 @@ from pathlib import Path
 
 
 class JsonFileScoreService:
-    """Best-score bookkeeping persisted to a JSON file, cached in memory."""
+    """Best-score bookkeeping per game, persisted to a JSON file, cached in memory."""
 
     def __init__(self, path: Path) -> None:
         self._path = path
-        self._best = self._read_best()
+        self._best = self._read()
 
-    def _read_best(self) -> int:
+    def _read(self) -> dict[str, int]:
         try:
-            return int(json.loads(self._path.read_text()).get("best", 0))
+            data = json.loads(self._path.read_text())
+            return {str(k): int(v) for k, v in data.items()} if isinstance(data, dict) else {}
         except (OSError, ValueError, json.JSONDecodeError):
-            return 0
+            return {}
 
-    def get_best(self) -> int:
-        return self._best
-
-    def submit(self, score: int) -> int:
-        self._best = max(self._best, score)
+    def _save(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps({"best": self._best}))
-        return self._best
+        self._path.write_text(json.dumps(self._best))
+
+    def get_best(self, game_id: str) -> int:
+        return self._best.get(game_id, 0)
+
+    def submit(self, game_id: str, score: int) -> int:
+        best = max(self._best.get(game_id, 0), score)
+        self._best[game_id] = best
+        self._save()
+        return best

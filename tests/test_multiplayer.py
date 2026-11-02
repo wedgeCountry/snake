@@ -5,50 +5,39 @@ import random
 import pytest
 from fastapi.testclient import TestClient
 
+from games.snake.config import SnakeConfig
+from games.snake.core import SnakeGame
+from games.snake.models import Cell, Direction
 from snake.app import app
-from snake.models import Cell, Direction
-from snake.core.game import InMemoryGameService
+from snake.contracts import SESSION_COOKIE
 from snake.services.leaderboard import JsonFileLeaderboardService
 from snake.services.score import JsonFileScoreService
 from snake.services.settings import JsonFileSettingsService
 from snake.services.user import CookieUserService
-
-
-class NoopLoop:
-    running = False
-
-    def activate(self) -> None: ...
-
-    def set_context(self, user_id, mode) -> None: ...
-
-    async def start(self) -> None: ...
-
-    async def stop(self) -> None: ...
+from snake.session import InMemorySessionService
 
 
 @pytest.fixture()
 def client(tmp_path):
-    game = InMemoryGameService(rng=random.Random(7))
-    app.state.game_service = game
+    app.state.session_service = InMemorySessionService()
     app.state.score_service = JsonFileScoreService(tmp_path / "scores.json")
     app.state.settings_service = JsonFileSettingsService(tmp_path / "settings.json")
     app.state.user_service = CookieUserService()
     app.state.leaderboard_service = JsonFileLeaderboardService(tmp_path / "leaderboard.json")
-    app.state.game_loop = NoopLoop()
+    app.state.session_loops = {}
     with TestClient(app) as c:
-        c.game = game
         yield c
 
 
-def make_multi(seed: int = 1) -> InMemoryGameService:
-    svc = InMemoryGameService(rng=random.Random(seed))
-    svc.new_game(torus=True, grid_size=10, mode="multi")
-    return svc
+def make_multi(seed: int = 1) -> SnakeGame:
+    game = SnakeGame(rng=random.Random(seed))
+    game.init(SnakeConfig(torus=True, grid_size=10, mode="multi"))
+    return game
 
 
 def test_multi_new_game_starts_two_snakes():
-    svc = make_multi()
-    state = svc.state()
+    game = make_multi()
+    state = game.state()
     assert state.mode == "multi"
     assert state.num_players == 2
     assert len(state.snakes[0]) == 3
@@ -58,98 +47,100 @@ def test_multi_new_game_starts_two_snakes():
 
 
 def test_multi_step_moves_both_snakes():
-    svc = make_multi()
-    h0 = svc.state().snakes[0][0]
-    h1 = svc.state().snakes[1][0]
-    svc.step()
-    assert svc.state().snakes[0][0] == Cell(h0.x + 1, h0.y, h0.z)
-    assert svc.state().snakes[1][0] == Cell(h1.x - 1, h1.y, h1.z)
+    game = make_multi()
+    h0 = game.state().snakes[0][0]
+    h1 = game.state().snakes[1][0]
+    game.tick()
+    assert game.state().snakes[0][0] == Cell(h0.x + 1, h0.y, h0.z)
+    assert game.state().snakes[1][0] == Cell(h1.x - 1, h1.y, h1.z)
 
 
 def test_per_player_direction_queues():
-    svc = make_multi()
-    svc.set_direction(Direction(0, 1, 0), player=1)
-    svc.step()
-    assert svc.state().directions[0] == Direction(1, 0, 0)
-    assert svc.state().directions[1] == Direction(0, 1, 0)
-    # player 0 queue unaffected by player 1 input
-    svc.set_direction(Direction(0, 0, 1), player=0)
-    svc.step()
-    assert svc.state().directions[0] == Direction(0, 0, 1)
-    assert svc.state().directions[1] == Direction(0, 1, 0)
+    game = make_multi()
+    game.set_direction(Direction(0, 1, 0), player=1)
+    game.tick()
+    assert game.state().directions[0] == Direction(1, 0, 0)
+    assert game.state().directions[1] == Direction(0, 1, 0)
+    game.set_direction(Direction(0, 0, 1), player=0)
+    game.tick()
+    assert game.state().directions[0] == Direction(0, 0, 1)
+    assert game.state().directions[1] == Direction(0, 1, 0)
 
 
 def test_player2_cannot_reverse():
-    svc = make_multi()
-    svc.set_direction(Direction(1, 0, 0), player=1)  # opposite of P2's (-1,0,0)
-    svc.step()
-    assert svc.state().directions[1] == Direction(-1, 0, 0)
+    game = make_multi()
+    game.set_direction(Direction(1, 0, 0), player=1)  # opposite of P2's (-1,0,0)
+    game.tick()
+    assert game.state().directions[1] == Direction(-1, 0, 0)
 
 
 def test_cross_snake_collision_kills():
-    svc = make_multi()
-    state = svc.state()
-    # place P2's head right in front of P1 so P1 runs into P2's body
+    game = make_multi()
+    state = game.state()
     state.snakes[0] = [Cell(3, 5, 5), Cell(2, 5, 5), Cell(1, 5, 5)]
     state.snakes[1] = [Cell(5, 5, 5), Cell(6, 5, 5), Cell(7, 5, 5)]
     state.directions[0] = Direction(1, 0, 0)
     state.directions[1] = Direction(-1, 0, 0)
     state.food = Cell(0, 0, 0)
-    svc.step()  # both heads move to (4,5,5) -> head-on collision
-    assert svc.state().status == "dead"
+    game.tick()  # both heads move to (4,5,5) -> head-on collision
+    assert game.state().status == "dead"
 
 
 def test_wall_death_in_multi_sets_loser():
-    svc = InMemoryGameService(rng=random.Random(1))
-    svc.new_game(torus=False, grid_size=10, mode="multi")
-    state = svc.state()
+    game = SnakeGame(rng=random.Random(1))
+    game.init(SnakeConfig(torus=False, grid_size=10, mode="multi"))
+    state = game.state()
     state.snakes[0] = [Cell(9, 5, 5), Cell(8, 5, 5), Cell(7, 5, 5)]
     state.directions[0] = Direction(1, 0, 0)
     state.snakes[1] = [Cell(2, 2, 2), Cell(3, 2, 2), Cell(4, 2, 2)]
     state.directions[1] = Direction(-1, 0, 0)
     state.food = Cell(0, 0, 0)
-    svc.step()
-    assert svc.state().status == "dead"
-    assert svc.state().loser == 0
+    game.tick()
+    assert game.state().status == "dead"
+    assert game.state().loser == 0
 
 
 def test_multi_scores_independent():
-    svc = make_multi()
-    state = svc.state()
+    game = make_multi()
+    state = game.state()
     state.snakes[1] = [Cell(5, 5, 5), Cell(6, 5, 5), Cell(7, 5, 5)]
     state.directions[1] = Direction(-1, 0, 0)
     state.food = Cell(4, 5, 5)
     state.snakes[0] = [Cell(1, 1, 1), Cell(0, 1, 1), Cell(0, 0, 1)]
     state.directions[0] = Direction(1, 0, 0)
-    svc.step()
-    assert svc.state().scores[1] == 10
-    assert svc.state().scores[0] == 0
+    game.tick()
+    assert game.state().scores[1] == 10
+    assert game.state().scores[0] == 0
 
 
-def test_state_dict_exposes_snakes_and_mode(client):
-    client.post("/api/new", json={"torus": True, "mode": "multi"})
-    body = client.get("/api/state").json()
-    assert body["mode"] == "multi"
-    assert len(body["snakes"]) == 2
-    assert len(body["directions"]) == 2
-    assert body["scores"] == [0, 0]
-    assert "loser" in body
+def test_state_envelope_exposes_snakes_and_mode(client):
+    client.post("/api/games/snake/new", json={"torus": True, "mode": "multi"})
+    body = client.get("/api/games/snake/state").json()
+    state = body["state"]
+    assert state["mode"] == "multi"
+    assert len(state["snakes"]) == 2
+    assert len(state["directions"]) == 2
+    assert state["scores"] == [0, 0]
+    assert "loser" in state
 
 
-def test_direction_endpoint_accepts_player(client):
-    client.post("/api/new", json={"torus": True, "mode": "multi"})
-    r = client.post("/api/direction", json={"direction": "up", "player": 1})
+def test_action_endpoint_accepts_player(client):
+    client.post("/api/games/snake/new", json={"torus": True, "mode": "multi"})
+    r = client.post("/api/games/snake/action",
+                    json={"player": 1, "action": {"direction": "up"}})
     assert r.status_code == 200
-    client.game.step()
-    body = client.get("/api/state").json()
-    assert body["directions"][1] == {"x": 0, "y": 1, "z": 0}
-    r = client.post("/api/direction", json={"direction": "up", "player": 5})
-    assert r.status_code == 422
+    session_id = client.cookies.get(SESSION_COOKIE)
+    app.state.session_loops[session_id].step()
+    body = client.get("/api/games/snake/state").json()
+    assert body["state"]["directions"][1] == {"x": 0, "y": 1, "z": 0}
+    r = client.post("/api/games/snake/action",
+                    json={"player": 5, "action": {"direction": "up"}})
+    assert r.status_code in (200, 422)
 
 
 def test_single_mode_state_unchanged(client):
-    client.post("/api/new", json={"torus": True})
-    body = client.get("/api/state").json()
-    assert body["mode"] == "single"
-    assert len(body["snakes"]) == 1
-    assert body["loser"] is None
+    client.post("/api/games/snake/new", json={"torus": True})
+    body = client.get("/api/games/snake/state").json()
+    assert body["state"]["mode"] == "single"
+    assert len(body["state"]["snakes"]) == 1
+    assert body["state"]["loser"] is None

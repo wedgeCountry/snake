@@ -1,13 +1,10 @@
+"""Snake domain models. Pure data, no I/O, no wire serialization
+(serialization lives in dto.py via DTO classes)."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-
-
-class Axis(str, Enum):
-    X = "x"
-    Y = "y"
-    Z = "z"
 
 
 class FruitKind(str, Enum):
@@ -16,16 +13,6 @@ class FruitKind(str, Enum):
     GROW_GRID = "grow_grid"      # expand the grid by 2 per axis
     SHRINK_GRID = "shrink_grid"  # shrink the grid by 2 per axis
     STAR = "star"                # indestructible for a while (can pass through itself)
-
-
-# How long each fruit kind stays on the board before despawning (None = forever).
-FRUIT_DURATION_S: dict[FruitKind, float | None] = {
-    FruitKind.APPLE: None,
-    FruitKind.REVERSE: 30.0,
-    FruitKind.GROW_GRID: 30.0,
-    FruitKind.SHRINK_GRID: 30.0,
-    FruitKind.STAR: 30.0,
-}
 
 
 @dataclass(frozen=True)
@@ -51,18 +38,12 @@ class Direction:
     def is_opposite(self, other: "Direction") -> bool:
         return (self.x, self.y, self.z) == (-other.x, -other.y, -other.z)
 
-    def to_dict(self) -> dict:
-        return {"x": self.x, "y": self.y, "z": self.z}
-
 
 @dataclass(frozen=True)
 class Cell:
     x: int
     y: int
     z: int
-
-    def to_dict(self) -> dict:
-        return {"x": self.x, "y": self.y, "z": self.z}
 
 
 @dataclass(frozen=True)
@@ -82,19 +63,12 @@ class Fruit:
     def z(self) -> int:
         return self.cell.z
 
-    def to_dict(self) -> dict:
-        d = self.cell.to_dict()
-        d["kind"] = self.kind.value
-        return d
 
+class SnakeState:
+    """Full game state. Multiplayer: `snakes` holds one snake per player;
+    `snake`, `direction` and `score` are player-0 accessors over the lists."""
 
-class GameState:
-    """Full game state and its API serialization in one place.
-
-    Multiplayer: `snakes` holds one snake per player. `snake`, `direction`
-    and `score` are player-0 accessors (properties over the lists), so
-    single-player code keeps working unchanged.
-    """
+    state_schema_version = 1
 
     def __init__(
         self,
@@ -139,10 +113,6 @@ class GameState:
     def food_kind(self) -> FruitKind:
         return self.food.kind
 
-    def fruit_duration_ms(self) -> int | None:
-        seconds = FRUIT_DURATION_S.get(self.food.kind)
-        return None if seconds is None else int(seconds * 1000)
-
     @property
     def snake(self) -> list[Cell]:
         return self.snakes[0]
@@ -171,8 +141,8 @@ class GameState:
     def num_players(self) -> int:
         return len(self.snakes)
 
-    def snapshot(self) -> "GameState":
-        return GameState(
+    def snapshot(self) -> "SnakeState":
+        return SnakeState(
             grid_size=self.grid_size,
             snake=self.snake,
             direction=self.direction,
@@ -190,36 +160,12 @@ class GameState:
             fruit_age_ms=self.fruit_age_ms,
         )
 
-    def to_dict(self) -> dict:
-        return {
-            "gridSize": self.grid_size,
-            "snake": [c.to_dict() for c in self.snake],
-            "snakes": [[c.to_dict() for c in s] for s in self.snakes],
-            "direction": self.direction.to_dict(),
-            "directions": [d.to_dict() for d in self.directions],
-            "food": self.food.to_dict(),
-            "score": self.score,
-            "scores": list(self.scores),
-            "stepTimeMs": self.step_time_ms,
-            "torus": self.torus,
-            "status": self.status,
-            "mode": self.mode,
-            "loser": self.loser,
-            "starSteps": list(self.star_steps),
-            "fruitAgeMs": self.fruit_age_ms,
-            "fruitDurationMs": self.fruit_duration_ms(),
-        }
 
+class GameSinglePlayerState(SnakeState):
+    """Single-player view over a (possibly multiplayer) state: exposes only
+    player 0's snake, direction and score, with mode pinned to "single"."""
 
-class GameSinglePlayerState(GameState):
-    """Single-player view over a (possibly multiplayer) GameState.
-
-    Wraps an existing state and exposes only player 0's snake, direction
-    and score, with mode pinned to "single". Intended for tests that want
-    to assert single-player semantics on any game state.
-    """
-
-    def __init__(self, state: GameState) -> None:
+    def __init__(self, state: SnakeState) -> None:
         super().__init__(
             grid_size=state.grid_size,
             snake=state.snakes[0],

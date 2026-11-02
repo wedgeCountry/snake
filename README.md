@@ -1,29 +1,40 @@
-# 3D Snake (FastAPI)
+# Game Platform (3D Snake + mehr)
 
-Echtes 3D-Snake im Browser: 10×10×10-Würfel, Torus-Modus, Wisch-/Pinch-Steuerung.
+Multi-Game-Pipeline im Browser: Snake (3D, 10×10×10-Würfel, Torus-Modus) und
+Collector (2D) laufen über dieselben generischen Routen und Verträge.
 
 ## Architektur
 
-- **Python core** (`snake/core/`): reine Spiellogik und Modelle — vollständig
-  per pytest testbar, kein I/O.
-- **Service Contracts Pattern**: Konsumenten hängen nur von `GameService`,
-  `ScoreService`, `SettingsService` (Protocols in `contracts.py`) ab; konkrete
-  Implementierungen (`core/game.py`, `services/score.py`, `services/settings.py`)
-  werden in `dependencies.py` als Provider auf `app.state` gelegt (in Tests
-  direkt auf `app.state` überschreibbar).
-- **Server-seitige Game-Loop** (`snake/loop.py`): eine asyncio-Task steppt das
-  Spiel im `step_time_ms`-Takt, sobald ein Spiel aktiv ist (`/api/new`). Sie ist
-  der einzige Stepper und reicht bei Game Over den Score beim `ScoreService` ein.
-  Richtungswechsel laufen über eine serverseitige Queue (`set_direction`), die
-  pro Schritt genau eine Richtung anwendet.
-- **FastAPI** (`snake/app.py`): dünne REST-Schicht, Request-Schemas in
-  `snake/schemas.py`. Endpunkte: `/api/state`, `/api/new`, `/api/direction`,
-  `/api/settings`.
-- **Frontend** (`static/`) als MVVM: `api.js` (einziger Backend-Brückenkopf),
-  `viewmodel.js` (pollt `/api/state`), `scene.js` (Three.js-Szenenaufbau +
-  Kamera), `hud.js` (DOM-Anzeige), `view.js` (reines Rendering),
-  `input.js` (Touch-/Tastatur-Gesten), `main.js` (Composition Root).
-  Styling in `style.css`.
+- **Reine Kerne** (`games/<id>/`): Spiellogik ohne I/O, mit injizierbarem RNG,
+  voll per pytest testbar. Snake: `games/snake/` (core + config + effects +
+  dto), Collector: `games/collector/`.
+- **Contracts over implementations**: Konsumenten hängen nur von Protocols ab
+  (`games/engine.py`: `Game`, `Serializable`; `snake/contracts.py`:
+  `SessionService`, `ScoreService` (keyed by `game_id`),
+  `LeaderboardService` (keyed by `game_id`), `SettingsService` (keyed by
+  `user_id`), `Transport`).
+- **Registry** (`games/registry.py`): `register`/`get`/`list_games`; jede
+  registration advertised `{id, name, realTime, maxPlayers}`.
+- **Session-Scoped Instances** (`snake/session.py`): ein `Game` + ein
+  `SessionLoop` (asyncio-Task) pro Session, In-Memory-`SessionService` mit
+  Idle-Expiry (30 min). Kein globaler mutable Game-State auf `app.state`.
+- **Generische Routen** (`snake/app.py`): `GET /api/games`,
+  `POST /api/games/{game_id}/new`, `GET /api/games/{game_id}/state`,
+  `POST /api/games/{game_id}/action`, plus WebSocket `/ws/games/{game_id}`
+  (Real-Time-Transport; REST-Polling als Fallback, Push-only — der
+  Session-Loop ist der einzige Stepper). Versionierter Envelope:
+  `{v, gameId, sessionId, status, players, state, meta}`; Session-Metadaten
+  (best/userId/leaderboard) liegen in `meta`, nicht im Game-State.
+- **DTO-Layer**: Serialisierung gehört zu DTO-Klassen
+  (`games/snake/dto.py`), nicht zum Domain-Modell; pro Spiel registriert
+  (`serialize` im Registry-Eintrag), sodass `app.py` spiel-agnostisch bleibt.
+- **Shared Contract Suite** (`tests/contracts/`): parametrisiert über die
+  Registry — jede `Game`-Implementierung muss sie bestehen.
+- **Frontend-Shell** (`static/main.js` als Composition Root): Game-Picker
+  (füttert sich aus `GET /api/games`), lädt `static/games/<id>/` hinter dem
+  `GameView`-Interface (`render`/`updateHud`/`showOverlay`/`dispose`) mit
+  Error Boundary. `viewmodel.js` konsumiert den Envelope und dispatcht auf
+  `gameId`; subscribed bei `realTime`, sonst Polling.
 
 ## Start
 
@@ -37,5 +48,6 @@ Dann http://localhost:8000 öffnen.
 ## Tests
 
 ```bash
-python -m pytest tests/ -q
+python -m pytest tests/ -q   # inkl. tests/contracts/
+node static/tests/run.js     # JS GameView Contract-Tests
 ```
