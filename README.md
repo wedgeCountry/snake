@@ -9,16 +9,16 @@ Collector (2D) laufen über dieselben generischen Routen und Verträge.
   voll per pytest testbar. Snake: `games/snake/` (core + config + effects +
   dto), Collector: `games/collector/`.
 - **Contracts over implementations**: Konsumenten hängen nur von Protocols ab
-  (`games/engine.py`: `Game`, `Serializable`; `snake/contracts.py`:
+  (`games/engine.py`: `Game`, `Serializable`; `server/contracts.py`:
   `SessionService`, `ScoreService` (keyed by `game_id`),
   `LeaderboardService` (keyed by `game_id`), `SettingsService` (keyed by
   `user_id`), `Transport`).
 - **Registry** (`games/registry.py`): `register`/`get`/`list_games`; jede
   registration advertised `{id, name, realTime, maxPlayers}`.
-- **Session-Scoped Instances** (`snake/session.py`): ein `Game` + ein
+- **Session-Scoped Instances** (`server/session.py`): ein `Game` + ein
   `SessionLoop` (asyncio-Task) pro Session, In-Memory-`SessionService` mit
   Idle-Expiry (30 min). Kein globaler mutable Game-State auf `app.state`.
-- **Generische Routen** (`snake/app.py`): `GET /api/games`,
+- **Generische Routen** (`server/app.py`): `GET /api/games`,
   `POST /api/games/{game_id}/new`, `GET /api/games/{game_id}/state`,
   `POST /api/games/{game_id}/action`, plus WebSocket `/ws/games/{game_id}`
   (Real-Time-Transport; REST-Polling als Fallback, Push-only — der
@@ -40,7 +40,7 @@ Collector (2D) laufen über dieselben generischen Routen und Verträge.
 
 ```bash
 pip install -r requirements.txt
-uvicorn snake.app:app --reload
+uvicorn server.app:app --reload
 ```
 
 Dann http://localhost:8000 öffnen.

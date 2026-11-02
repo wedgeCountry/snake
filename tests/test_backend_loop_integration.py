@@ -13,13 +13,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from games.snake.models import Cell, Direction
-from snake.app import app
-from snake.contracts import SESSION_COOKIE
-from snake.services.leaderboard import JsonFileLeaderboardService
-from snake.services.score import JsonFileScoreService
-from snake.services.settings import JsonFileSettingsService
-from snake.services.user import CookieUserService
-from snake.session import InMemorySessionService
+from server.app import app
+from server.contracts import SESSION_COOKIE
+from server.services.leaderboard import JsonFileLeaderboardService
+from server.services.score import JsonFileScoreService
+from server.services.settings import JsonFileSettingsService
+from server.services.user import CookieUserService
+from server.session import InMemorySessionService
 
 
 @pytest.fixture()

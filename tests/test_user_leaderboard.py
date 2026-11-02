@@ -8,11 +8,11 @@ import pytest
 from games.snake.config import SnakeConfig
 from games.snake.core import SnakeGame
 from games.snake.models import Cell, Direction
-from snake.services.leaderboard import JsonFileLeaderboardService
-from snake.services.score import JsonFileScoreService
-from snake.services.settings import JsonFileSettingsService
-from snake.services.user import COOKIE_NAME, CookieUserService
-from snake.session import InMemorySessionService, SessionLoop
+from server.services.leaderboard import JsonFileLeaderboardService
+from server.services.score import JsonFileScoreService
+from server.services.settings import JsonFileSettingsService
+from server.services.user import COOKIE_NAME, CookieUserService
+from server.session import InMemorySessionService, SessionLoop
 
 
 def test_user_ids_are_unique():

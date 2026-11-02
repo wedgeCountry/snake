@@ -6,8 +6,8 @@ import time
 
 from games.snake.config import SnakeConfig
 from games.snake.core import SnakeGame
-from snake.contracts import GameSession
-from snake.session import IDLE_TTL_S, InMemorySessionService
+from server.contracts import GameSession
+from server.session import IDLE_TTL_S, InMemorySessionService
 
 
 def make_service(seed: int = 1) -> SnakeGame:
@@ -52,7 +52,7 @@ def test_touch_extends_lifetime():
 
 def test_no_mutable_game_state_on_app_state():
     from fastapi import FastAPI
-    from snake.app import lifespan
+    from server.app import lifespan
     app = FastAPI(lifespan=lifespan)
     # app.state carries only services and the loop registry — never a Game
     assert not hasattr(app.state, "game_service")
@@ -70,8 +70,8 @@ def test_session_create_uses_registry_factory():
 
 def test_expiry_cancels_and_removes_session_loop():
     import asyncio
-    from snake.session import SessionLoop
-    from snake.services.score import JsonFileScoreService
+    from server.session import SessionLoop
+    from server.services.score import JsonFileScoreService
     import tempfile, pathlib
     now = [1000.0]
     removed = []
@@ -101,8 +101,8 @@ def test_expiry_cancels_and_removes_session_loop():
 
 def test_loop_removes_itself_on_natural_termination():
     import asyncio
-    from snake.session import SessionLoop
-    from snake.services.score import JsonFileScoreService
+    from server.session import SessionLoop
+    from server.services.score import JsonFileScoreService
     import tempfile, pathlib
     from games.snake.models import Cell, Direction
     game = make_service()

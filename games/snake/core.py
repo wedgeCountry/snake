@@ -179,10 +179,6 @@ class SnakeGame:
                 state.fruit_age_ms = 0
         return state
 
-    # Backwards-compatible alias for the old step() name.
-    def step(self) -> SnakeState:
-        return self.tick()
-
     def _drain_direction(self, state: SnakeState, player: int) -> None:
         if self._dir_queues[player]:
             state.directions[player] = self._dir_queues[player].pop(0)

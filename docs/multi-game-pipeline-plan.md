@@ -30,7 +30,7 @@ can be refactored later without rewrites.
 Define all protocols and the contract test suite in one pass, with snake as the
 reference implementation:
 
-- [x] `Game` protocol (in `snake/engine.py`): `init(config) -> GameState`,
+- [x] `Game` protocol (in `games/engine.py`): `init(config) -> GameState`,
       `state()`, `apply_action(player, action)`, `tick() -> GameState`,
       plus `max_players()`, `is_terminal()`, and a versioned state schema
       (`state_schema_version`) for future replay/migration.
@@ -53,7 +53,7 @@ reference implementation:
       `snake/core/game.py` path; no aliases.
 - [x] `games/registry.py`: `register(game_id, factory)`, `get(game_id)`,
       `list_games()` (each entry advertises `{id, name, realTime, maxPlayers}`).
-- [x] Generic routes in `snake/app.py`: `GET /api/games`,
+- [x] Generic routes in `server/app.py`: `GET /api/games`,
       `/api/games/{game_id}/new`, `/api/games/{game_id}/state`,
       `/api/games/{game_id}/action`. Delete the legacy `/api/*` routes outright.
 - [x] Generic envelope in `schemas.py`: `{v: 1, gameId, status, players, state,
