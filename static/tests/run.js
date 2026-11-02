@@ -63,6 +63,15 @@ function env(status, score) {
   assert(/if \(vm\.running\) vm\.queueDirection\(map\[e\.key\]\);\s*else this\.onStart\(\)/.test(inputSrc),
     'snake input starts the game on arrow/PageUp/PageDown when idle (desktop)');
 
+  // Shell: start overlay must not brick the app (first load has no session -> state 404)
+  const mainSrc = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+  assert(/try\s*\{\s*await vm\.init\(\);\s*\}\s*catch/.test(mainSrc),
+    'shell survives initial state fetch failure (no session cookie yet)');
+  assert(mainSrc.includes('if (vm.running) view.hideOverlay();'),
+    'shell hides the "Tippen zum Starten" overlay once the game runs');
+  assert(/let starting = false;[\s\S]*if \(starting \|\| vm\.running\) return;/.test(mainSrc),
+    'startIfNeeded is re-entrancy guarded (pointerdown + touchend double fire)');
+
   // ViewModel consumes the versioned envelope and dispatches on gameId
   const game = { id: 'snake', name: '3D Snake', realTime: false, maxPlayers: 2 };
   const v = new VM(fakeApi({ state: env('running', 0) }), game);

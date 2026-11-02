@@ -40,7 +40,10 @@
     shell.vm = vm;
     shell.view = view;
 
-    vm.onStateChange = () => view.updateHud(vm);
+    vm.onStateChange = () => {
+      view.updateHud(vm);
+      if (vm.running) view.hideOverlay();
+    };
     vm.onGameOver = () => {
       view.updateHud(vm);
       const multi = vm.mode === 'multi';
@@ -51,9 +54,14 @@
       view.showOverlay('GAME OVER', msg, 'Tippen für Neustart');
     };
 
+    let starting = false;
     async function startIfNeeded() {
-      if (!vm.started || !vm.running) {
-        if (!vm.running) await vm.start(vm.mode);
+      if (starting || vm.running) return;
+      starting = true;
+      try {
+        await vm.start(vm.mode);
+      } finally {
+        starting = false;
       }
     }
 
@@ -79,7 +87,9 @@
       try { view.render(vm, now); } catch (e) { /* error boundary: keep shell alive */ }
     }
 
-    await vm.init();
+    try {
+      await vm.init();
+    } catch (e) {}
     view.updateHud(vm);
     requestAnimationFrame(frame);
   }
