@@ -66,3 +66,70 @@ def test_session_create_uses_registry_factory():
     assert isinstance(session, GameSession)
     assert isinstance(session.game, SnakeGame)
     assert session.user_id == "u1"
+
+
+def test_expiry_cancels_and_removes_session_loop():
+    import asyncio
+    from snake.session import SessionLoop
+    from snake.services.score import JsonFileScoreService
+    import tempfile, pathlib
+    now = [1000.0]
+    removed = []
+    sessions = InMemorySessionService(ttl_s=30, now=lambda: now[0],
+                                      on_expire=lambda sid: removed.append(sid))
+    sid = sessions.create("snake", "u1", "single")
+    session = sessions.get(sid)
+    session.game.state().step_time_ms = 5
+    loops = {}
+    loop = SessionLoop(session, JsonFileScoreService(pathlib.Path(tempfile.mkdtemp()) / "s.json"))
+    loops[sid] = loop
+    session.game.state().status = "running"
+
+    async def run():
+        await loop.start()
+        await asyncio.sleep(0.05)
+        assert loop.running
+        now[0] += 31
+        sessions.get("other")  # triggers expiry sweep
+        assert sessions.get(sid) is None
+        assert removed == [sid]
+        await loop.stop()
+        assert not loop.running
+
+    asyncio.run(run())
+
+
+def test_loop_removes_itself_on_natural_termination():
+    import asyncio
+    from snake.session import SessionLoop
+    from snake.services.score import JsonFileScoreService
+    import tempfile, pathlib
+    from games.snake.models import Cell, Direction
+    game = make_service()
+    state = game.state()
+    state.snake = [Cell(4, 2, 2), Cell(3, 2, 2), Cell(2, 2, 2)]
+    state.direction = Direction(1, 0, 0)
+    state.food = Cell(0, 0, 0)
+    state.step_time_ms = 5
+    from games.snake.config import SnakeConfig
+    game._config = SnakeConfig(torus=False, grid_size=5)
+    state.torus = False
+    finished = []
+    sessions = InMemorySessionService()
+    sid = sessions.create("snake", "u1", "single")
+    session = sessions.get(sid)
+    session.game = game
+    loop = SessionLoop(session, JsonFileScoreService(pathlib.Path(tempfile.mkdtemp()) / "s.json"),
+                       on_finished=lambda: finished.append(True))
+
+    async def run():
+        await loop.start()
+        for _ in range(50):
+            await asyncio.sleep(0.01)
+            if not loop.running:
+                break
+
+    asyncio.run(run())
+    assert game.state().status == "dead"
+    assert finished == [True]
+    assert not loop.running

@@ -19,6 +19,10 @@ window.GameView_snake = window.SnakeView = class SnakeView {
 
   showOverlay(title, msg, cta) { this.hud.showOverlay(title, msg, cta); }
 
+  dispose() {
+    if (this.scene && this.scene.dispose) this.scene.dispose();
+  }
+
   hideOverlay() { this.hud.hideOverlay(); }
 
   updateHud(vm) { this.hud.update(vm); }

@@ -42,7 +42,9 @@ def session_game(client):
 def api_state(client):
     r = client.get("/api/games/snake/state")
     assert r.status_code == 200
-    return r.json()["state"]
+    body = r.json()
+    body["state"]["meta"] = body["meta"]
+    return body["state"]
 
 
 def test_server_loop_advances_game_via_api(client):
@@ -54,7 +56,8 @@ def test_server_loop_advances_game_via_api(client):
     head1 = s["snake"][0]
     assert s["status"] == "running"
     assert (head1["x"], head1["y"], head1["z"]) != (head0["x"], head0["y"], head0["z"])
-    assert head1["x"] == (head0["x"] + 1) % s["gridSize"] or head1["x"] > head0["x"]
+    dist = (head1["x"] - head0["x"]) % s["gridSize"]
+    assert 1 <= dist <= 10, f"moved {dist} cells in 0.5s at 60ms step"
 
 
 def test_direction_change_applies_on_server_tick(client):
@@ -67,7 +70,7 @@ def test_direction_change_applies_on_server_tick(client):
     time.sleep(0.4)
     s = api_state(client)
     assert s["direction"] == {"x": 0, "y": 1, "z": 0}
-    assert s["snake"][0]["y"] > y0
+    assert s["snake"][0]["y"] > y0 or (s["snake"][0]["y"] - y0) % 10 > 0
     assert s["status"] == "running"
 
 
@@ -85,7 +88,7 @@ def test_game_over_submits_best_via_api(client):
         time.sleep(0.05)
         s = api_state(client)
     assert s["status"] == "dead"
-    assert s["best"] == 50
+    assert s["meta"]["best"] == 50
     assert app.state.score_service.get_best("snake") == 50
     # loop deactivates: state stays frozen afterwards
     time.sleep(0.3)

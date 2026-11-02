@@ -77,7 +77,7 @@ def test_get_state_envelope(client):
     state = body["state"]
     assert state["gridSize"] == 10
     assert state["status"] == "running"
-    assert "best" in state and "stepTimeMs" in state
+    assert "best" in body["meta"] and "stepTimeMs" in body["meta"]
 
 
 def test_action_then_step(client):
@@ -106,7 +106,7 @@ def test_new_game_resets(client):
     api_step(client)
     body = api_new(client, torus=False)
     assert body["state"]["score"] == 0
-    assert body["state"]["torus"] is False
+    assert body["meta"]["torus"] is False
     assert len(body["state"]["snake"]) == 3
 
 
@@ -115,8 +115,8 @@ def test_settings_roundtrip(client):
     r = client.post("/api/settings", json={"step_time_ms": 120, "torus": False})
     assert r.status_code == 200
     body = api_state(client)
-    assert body["state"]["stepTimeMs"] == 120
-    assert body["state"]["torus"] is False
+    assert body["meta"]["stepTimeMs"] == 120
+    assert body["meta"]["torus"] is False
 
 
 def test_settings_clamped(client):
@@ -134,25 +134,25 @@ def test_state_sets_user_cookie_on_first_visit(client):
     r = client.post("/api/games/snake/new", json={"torus": True})
     assert r.status_code == 200
     body = r.json()
-    assert body["state"]["userId"]
+    assert body["meta"]["userId"]
     assert COOKIE_NAME in r.cookies
-    assert r.cookies[COOKIE_NAME] == body["state"]["userId"]
+    assert r.cookies[COOKIE_NAME] == body["meta"]["userId"]
     r2 = client.get("/api/games/snake/state")
     body2 = r2.json()
-    assert body2["state"]["leaderboard"] == []
+    assert body2["meta"]["leaderboard"] == []
     return
     assert r.status_code == 200
     body = r.json()
-    assert body["state"]["userId"]
+    assert body["meta"]["userId"]
     assert COOKIE_NAME in r.cookies
-    assert r.cookies[COOKIE_NAME] == body["state"]["userId"]
-    assert body["state"]["leaderboard"] == []
+    assert r.cookies[COOKIE_NAME] == body["meta"]["userId"]
+    assert body["meta"]["leaderboard"] == []
 
 
 def test_user_id_is_stable_across_requests(client):
     api_new(client)
-    first = api_state(client)["state"]["userId"]
-    second = api_state(client)["state"]["userId"]
+    first = api_state(client)["meta"]["userId"]
+    second = api_state(client)["meta"]["userId"]
     assert first == second
 
 
@@ -173,3 +173,19 @@ def test_leaderboard_rejects_unknown_mode(client):
 def test_state_requires_session(client):
     r = client.get("/api/games/snake/state")
     assert r.status_code == 404
+
+
+def test_action_rejects_player_beyond_max_players(client):
+    api_new(client)
+    r = client.post("/api/games/snake/action",
+                    json={"player": 5, "action": {"direction": "up"}})
+    assert r.status_code == 422
+
+
+def test_envelope_meta_carries_session_info_not_game_state(client):
+    api_new(client)
+    body = api_state(client)
+    assert "best" not in body["state"]
+    assert "userId" not in body["state"]
+    assert body["meta"]["best"] == 0
+    assert body["meta"]["userId"]

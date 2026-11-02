@@ -21,10 +21,13 @@ Collector (2D) laufen über dieselben generischen Routen und Verträge.
 - **Generische Routen** (`snake/app.py`): `GET /api/games`,
   `POST /api/games/{game_id}/new`, `GET /api/games/{game_id}/state`,
   `POST /api/games/{game_id}/action`, plus WebSocket `/ws/games/{game_id}`
-  (Real-Time-Transport; REST-Polling als Fallback). Versionierter Envelope:
-  `{v, gameId, sessionId, status, players, state, meta}`.
+  (Real-Time-Transport; REST-Polling als Fallback, Push-only — der
+  Session-Loop ist der einzige Stepper). Versionierter Envelope:
+  `{v, gameId, sessionId, status, players, state, meta}`; Session-Metadaten
+  (best/userId/leaderboard) liegen in `meta`, nicht im Game-State.
 - **DTO-Layer**: Serialisierung gehört zu DTO-Klassen
-  (`games/snake/dto.py`), nicht zum Domain-Modell.
+  (`games/snake/dto.py`), nicht zum Domain-Modell; pro Spiel registriert
+  (`serialize` im Registry-Eintrag), sodass `app.py` spiel-agnostisch bleibt.
 - **Shared Contract Suite** (`tests/contracts/`): parametrisiert über die
   Registry — jede `Game`-Implementierung muss sie bestehen.
 - **Frontend-Shell** (`static/main.js` als Composition Root): Game-Picker

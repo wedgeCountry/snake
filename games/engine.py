@@ -55,6 +55,7 @@ class GameInfo:
     real_time: bool
     max_players: int
     factory: Callable[[random.Random | None], Game] = field(repr=False)
+    serialize: Callable[[GameState], dict] = field(repr=False)
 
 
 @dataclass(frozen=True)

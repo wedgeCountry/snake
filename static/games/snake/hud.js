@@ -26,7 +26,7 @@ window.SnakeHud = class SnakeHud {
       this.dom.score2.parentElement.style.display = multi ? '' : 'none';
       if (multi) this.dom.score2.textContent = (s.scores && s.scores[1]) || 0;
     }
-    this.dom.best.textContent = s.best || 0;
+    this.dom.best.textContent = (vm.meta && vm.meta.best) || 0;
     this.dom.height.textContent = s.snake[0].y;
     if (this.dom.star) {
       const starSteps = (s.starSteps && s.starSteps[0]) || 0;
@@ -35,7 +35,7 @@ window.SnakeHud = class SnakeHud {
     }
     this.dom.torusBtn.textContent = 'Torus: ' + (vm.torus ? 'An' : 'Aus');
     if (this.dom.modeBtn) this.dom.modeBtn.textContent = multi ? 'Modus: Multi' : 'Modus: Single';
-    if (document.activeElement !== this.dom.speed) this.dom.speed.value = s.stepTimeMs;
+    if (document.activeElement !== this.dom.speed) this.dom.speed.value = (vm.meta && vm.meta.stepTimeMs) || s.stepTimeMs;
   }
 
   showOverlay(title, msg, cta) {

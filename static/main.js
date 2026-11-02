@@ -46,8 +46,8 @@
       const multi = vm.mode === 'multi';
       const msg = multi
         ? 'P1: ' + vm.state.score + ' · P2: ' + ((vm.state.scores && vm.state.scores[1]) || 0) +
-          '  ·  Rekord: ' + (vm.state.best || 0)
-        : 'Punkte: ' + vm.state.score + '  ·  Rekord: ' + (vm.state.best || 0);
+          '  ·  Rekord: ' + ((vm.meta && vm.meta.best) || 0)
+        : 'Punkte: ' + vm.state.score + '  ·  Rekord: ' + ((vm.meta && vm.meta.best) || 0);
       view.showOverlay('GAME OVER', msg, 'Tippen für Neustart');
     };
 
@@ -62,8 +62,11 @@
     view.dom.modeBtn.addEventListener('pointerdown', (e) => { e.stopPropagation(); vm.toggleMode(); });
     view.dom.speed.addEventListener('input', (e) => vm.setSpeed(parseInt(e.target.value, 10)));
 
-    if (window.SnakeInput) new SnakeInput(vm, view, startIfNeeded);
-    else {
+    let input = null;
+    if (window.SnakeInput) {
+      input = new SnakeInput(vm, view, startIfNeeded);
+      shell.input = input;
+    } else {
       window.addEventListener('keydown', (e) => {
         const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
         if (map[e.key]) { e.preventDefault(); vm.running ? vm.queueDirection(map[e.key]) : startIfNeeded(); }
@@ -83,9 +86,11 @@
 
   function disposeGame() {
     if (shell.vm) shell.vm._stopTransport();
+    if (shell.input && shell.input.dispose) shell.input.dispose();
     if (shell.view && shell.view.dispose) shell.view.dispose();
     shell.vm = null;
     shell.view = null;
+    shell.input = null;
   }
 
   async function init() {

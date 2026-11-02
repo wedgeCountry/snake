@@ -1,11 +1,17 @@
 """Session-scoped game instances: one Game per session, idle expiry, and the
-per-session asyncio loop. No global mutable game state lives on app.state."""
+per-session asyncio loop. No global mutable game state lives on app.state.
+
+One authoritative stepper per session: the SessionLoop's background task is
+the only thing that ticks a session's game. Transports (REST/WS) only push
+or accept actions.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import secrets
 import time
+from typing import Callable
 
 from games.engine import Game
 from games.registry import get as get_game_info
@@ -19,10 +25,12 @@ class InMemorySessionService:
     shared (e.g. DB-backed) store later; a live session owns an asyncio task,
     so a shared store would need a loop claim/lease strategy."""
 
-    def __init__(self, ttl_s: float = IDLE_TTL_S, now: callable = time.monotonic) -> None:
+    def __init__(self, ttl_s: float = IDLE_TTL_S, now: Callable[[], float] = time.monotonic,
+                 on_expire: Callable[[str], None] | None = None) -> None:
         self._sessions: dict[str, GameSession] = {}
         self._ttl_s = ttl_s
         self._now = now
+        self._on_expire = on_expire
 
     def create(self, game_id: str, user_id: str, mode: str) -> str:
         info = get_game_info(game_id)
@@ -45,26 +53,30 @@ class InMemorySessionService:
             session.last_active = self._now()
 
     def drop(self, session_id: str) -> None:
-        self._sessions.pop(session_id, None)
+        if self._sessions.pop(session_id, None) is not None and self._on_expire is not None:
+            self._on_expire(session_id)
 
     def _expire(self) -> None:
         now = self._now()
         expired = [sid for sid, s in self._sessions.items() if now - s.last_active > self._ttl_s]
         for sid in expired:
-            del self._sessions[sid]
+            self.drop(sid)
 
 
 class SessionLoop:
     """One authoritative stepper per session: an asyncio task ticking the
     session's game on the server clock. Score submission happens here, once,
-    when the game reaches a terminal state."""
+    when the game reaches a terminal state. The task ends itself on terminal
+    state so no loop outlives its session."""
 
     def __init__(self, session: GameSession, score_service, leaderboard_service=None,
-                 on_terminal=None) -> None:
+                 on_terminal: Callable[[GameSession], None] | None = None,
+                 on_finished: Callable[[], None] | None = None) -> None:
         self._session = session
         self._score = score_service
         self._leaderboard = leaderboard_service
         self._on_terminal = on_terminal
+        self._on_finished = on_finished
         self._task: asyncio.Task | None = None
         self._submitted = False
 
@@ -73,6 +85,8 @@ class SessionLoop:
         return self._task is not None and not self._task.done()
 
     def step(self, action: dict | None = None) -> None:
+        """Advance the game one tick. Called only by the loop's own task or by
+        tests — never concurrently with it."""
         game = self._session.game
         if action is not None:
             game.apply_action(int(action.get("player", 0)), action)
@@ -103,10 +117,18 @@ class SessionLoop:
             self._task = None
 
     async def _run(self) -> None:
-        while True:
-            if self._session.game.is_terminal():
-                await asyncio.sleep(0.25)
-                continue
-            self.step()
-            step_ms = getattr(self._session.game.state(), "step_time_ms", 260)
-            await asyncio.sleep(step_ms / 1000.0)
+        cancelled = False
+        try:
+            while not self._session.game.is_terminal():
+                self.step()
+                step_ms = getattr(self._session.game.state(), "step_time_ms", 260)
+                await asyncio.sleep(step_ms / 1000.0)
+        except asyncio.CancelledError:
+            cancelled = True
+            raise
+        finally:
+            self._task = None
+            # only natural termination (game over) drops the loop; a manual
+            # stop() keeps it registered so tests/tools can step directly
+            if not cancelled and self._on_finished is not None:
+                self._on_finished()

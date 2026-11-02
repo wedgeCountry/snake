@@ -54,6 +54,9 @@ function env(status, score) {
   assert(viewSrc.includes('render(vm, now)'), 'snake view implements render(envelope-bearing vm, now)');
   assert(viewSrc.includes('showOverlay('), 'snake view implements showOverlay');
   assert(viewSrc.includes('updateHud(vm)'), 'snake view implements updateHud');
+  assert(viewSrc.includes('dispose()'), 'snake view implements dispose (GameView contract)');
+  const inputSrc = fs.readFileSync(path.join(__dirname, '..', 'games', 'snake', 'input.js'), 'utf8');
+  assert(inputSrc.includes('dispose()'), 'snake input implements dispose (listener cleanup)');
 
   // ViewModel consumes the versioned envelope and dispatches on gameId
   const game = { id: 'snake', name: '3D Snake', realTime: false, maxPlayers: 2 };
@@ -62,6 +65,8 @@ function env(status, score) {
   assert(v.envelope.v === 1, 'envelope version read');
   assert(v.gameId === 'snake', 'dispatch key gameId');
   assert(v.running === true && v.state.score === 0, 'state extracted from envelope');
+  v._apply({ ...env('running', 0), meta: { best: 42, userId: 'u1' } });
+  assert(v.meta.best === 42, 'meta extracted from envelope');
   v._stopTransport();
 
   // Game over transition fires onGameOver exactly once

@@ -7,6 +7,7 @@ window.GameViewModel = class GameViewModel {
     this.game = game; // {id, name, realTime, maxPlayers}
     this.state = null;
     this.envelope = null;
+    this.meta = {};
     this.running = false;
     this.started = false;
     this.torus = true;
@@ -69,6 +70,7 @@ window.GameViewModel = class GameViewModel {
   _apply(env) {
     this.envelope = env;
     this.state = env.state;
+    this.meta = env.meta || {};
     this.running = env.status === 'running';
     if (!this.started) this.started = this.running;
   }
