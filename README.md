@@ -51,3 +51,12 @@ Dann http://localhost:8000 öffnen.
 python -m pytest tests/ -q   # inkl. tests/contracts/
 node static/tests/run.js     # JS GameView Contract-Tests
 ```
+
+GUI-Test (headless Chromium via Playwright: klickt Start, waehlt Snake im
+Game-Picker und drueckt dann jede Schaltflaeche einmal der Reihe nach):
+
+```bash
+pip install -r requirements.txt -r requirements-gui.txt
+python -m playwright install chromium
+python -m pytest tests/test_gui.py -q
+```
