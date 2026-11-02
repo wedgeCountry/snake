@@ -29,6 +29,15 @@
     }
   }
 
+  function freshCanvas() {
+    // a canvas locks to its first context type (2d vs webgl), so each game
+    // gets a fresh element instead of the one the previous game used
+    const old = document.getElementById('scene');
+    const canvas = old.cloneNode(false);
+    old.parentNode.replaceChild(canvas, old);
+    return canvas;
+  }
+
   async function startGame(game) {
     disposeGame();
     shell.game = game;
@@ -36,7 +45,7 @@
     const Ctor = window['GameView_' + game.id];
     if (!Ctor) throw new Error('no GameView for game: ' + game.id);
     const vm = new GameViewModel(ApiClient, game);
-    const view = new Ctor(document.getElementById('scene'));
+    const view = new Ctor(freshCanvas());
     shell.vm = vm;
     shell.view = view;
 

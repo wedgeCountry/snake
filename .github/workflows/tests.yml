@@ -23,3 +23,13 @@ jobs:
         with:
           node-version: "22"
       - run: node static/tests/run.js
+  gui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt -r requirements-gui.txt
+      - run: python -m playwright install --with-deps chromium
+      - run: python -m pytest tests/test_gui.py -q

@@ -39,6 +39,17 @@ html, body {
   letter-spacing: .5px;
 }
 
+#modeBtn {
+  pointer-events: auto;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid #4dd0ff66;
+  background: rgba(13, 20, 44, .7);
+  color: #4dd0ff;
+  font-size: 13px;
+  letter-spacing: .5px;
+}
+
 .legend {
   position: fixed;
   bottom: calc(58px + env(safe-area-inset-bottom));
