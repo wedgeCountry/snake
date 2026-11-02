@@ -27,6 +27,14 @@ window.SnakeScene = class SnakeScene {
     Object.assign(sun.shadow.camera, { left: -sc, right: sc, top: sc, bottom: -sc, far: this.N * 6 });
     this.scene.add(sun);
 
+    this.fruitStyles = {
+      apple:      { color: 0xff8c1a, emissive: 0xff5500, label: 'Apfel +10' },
+      reverse:    { color: 0x9b5cff, emissive: 0x6a1fd0, label: 'Umkehr' },
+      grow_grid:  { color: 0x4dff88, emissive: 0x12b76a, label: 'Gitter +2' },
+      shrink_grid:{ color: 0xff5c7a, emissive: 0xd0244a, label: 'Gitter -2' },
+      star:       { color: 0xffe14d, emissive: 0xffc400, label: 'Stern unsterblich' },
+    };
+
     this._buildFloor();
     this._buildBox();
     this._buildLanes();
@@ -43,6 +51,12 @@ window.SnakeScene = class SnakeScene {
   _cell(c) { return c - this.OFF; }
 
   _buildFloor() {
+    if (this.floor) {
+      this.scene.remove(this.floor);
+      this.floor.geometry.dispose();
+      this.floor.material.map.dispose();
+      this.floor.material.dispose();
+    }
     const c = document.createElement('canvas');
     c.width = c.height = 512;
     const g = c.getContext('2d');
@@ -51,17 +65,22 @@ window.SnakeScene = class SnakeScene {
       g.fillStyle = ((i + j) % 2 === 0) ? '#131a33' : '#0f1529';
       g.fillRect(i * s, j * s, s, s);
     }
-    const floor = new THREE.Mesh(
+    this.floor = new THREE.Mesh(
       new THREE.PlaneGeometry(this.N * 6, this.N * 6),
       new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(c), roughness: 1 })
     );
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -this.OFF - 0.51;
-    floor.receiveShadow = true;
-    this.scene.add(floor);
+    this.floor.rotation.x = -Math.PI / 2;
+    this.floor.position.y = -this.OFF - 0.51;
+    this.floor.receiveShadow = true;
+    this.scene.add(this.floor);
   }
 
   _buildBox() {
+    if (this.boxEdges) {
+      this.scene.remove(this.boxEdges);
+      this.boxEdges.geometry.dispose();
+      this.scene.remove(this.levelLines);
+    }
     this.boxEdges = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(this.N, this.N, this.N)),
       new THREE.LineBasicMaterial({ color: 0xff3355, transparent: true, opacity: 0.55 })
@@ -77,6 +96,17 @@ window.SnakeScene = class SnakeScene {
       this.levelLines.add(lg);
     }
     this.scene.add(this.levelLines);
+  }
+
+  /* Rebuild board geometry when the server grows/shrinks the grid. */
+  setGridSize(n) {
+    if (n === this.N) return;
+    this.N = n;
+    this.OFF = (n - 1) / 2;
+    this._buildFloor();
+    this._buildBox();
+    if (this.foodBlob) this.foodBlob.position.y = -this.OFF - 0.5;
+    for (const p of this.blobShadows || []) for (const b of p) b.position.y = -this.OFF - 0.5;
   }
 
   _buildLanes() {
@@ -103,11 +133,21 @@ window.SnakeScene = class SnakeScene {
   }
 
   _buildFood() {
-    this.food = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.36, 0),
-      new THREE.MeshStandardMaterial({ color: 0xff8c1a, emissive: 0xff5500, emissiveIntensity: 1.3, roughness: 0.25 })
-    );
-    this.food.castShadow = true;
+    // one mesh per fruit kind; view.js toggles visibility by kind
+    this.food = new THREE.Group();
+    this.fruitMeshes = {
+      apple: new THREE.Mesh(new THREE.IcosahedronGeometry(0.36, 0), new THREE.MeshStandardMaterial({ roughness: 0.25 })),
+      reverse: new THREE.Mesh(new THREE.TorusGeometry(0.26, 0.11, 10, 20), new THREE.MeshStandardMaterial({ roughness: 0.3 })),
+      grow_grid: new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.55), new THREE.MeshStandardMaterial({ roughness: 0.3 })),
+      shrink_grid: new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.55, 4), new THREE.MeshStandardMaterial({ roughness: 0.3 })),
+      star: new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0), new THREE.MeshStandardMaterial({ roughness: 0.2, metalness: 0.3 })),
+    };
+    for (const kind of Object.keys(this.fruitMeshes)) {
+      const m = this.fruitMeshes[kind];
+      m.castShadow = true;
+      m.visible = false;
+      this.food.add(m);
+    }
     this.scene.add(this.food);
     this.foodLight = new THREE.PointLight(0xff7733, 1.2, 10);
     this.scene.add(this.foodLight);

@@ -39,6 +39,21 @@ html, body {
   letter-spacing: .5px;
 }
 
+.legend {
+  position: fixed;
+  bottom: calc(58px + env(safe-area-inset-bottom));
+  left: 0; right: 0;
+  z-index: 5;
+  display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 14px;
+  color: #aab6e8; font-size: 12px; letter-spacing: .3px;
+  pointer-events: none; text-shadow: 0 1px 4px #000;
+}
+.legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.legend .dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  display: inline-block; box-shadow: 0 0 6px currentColor;
+}
+
 .controls {
   position: fixed;
   bottom: calc(10px + env(safe-area-inset-bottom));
