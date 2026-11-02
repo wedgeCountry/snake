@@ -38,13 +38,7 @@ def test_tick_determinism_with_seeded_rng(game_id):
         sa, sb = a.tick(), b.tick()
         if a.is_terminal() and b.is_terminal():
             break
-    def snap(g):
-        if game_id == "snake":
-            from games.snake.dto import SnakeStateDTO
-            return SnakeStateDTO.from_state(g.state()).to_dict()
-        s = g.state()
-        return vars(s).copy()
-    assert snap(a) == snap(b)
+    assert get(game_id).serialize(a.state()) == get(game_id).serialize(b.state())
 
 
 @pytest.mark.parametrize("game_id", list(_REGISTRY))

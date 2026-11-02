@@ -20,6 +20,9 @@ The multi-game pipeline is defined by these non-negotiables (see
 
 ## Adding a game
 
+See [docs/adding-a-new-game.md](docs/adding-a-new-game.md) for the minimal
+end-to-end guide.
+
 1. Create `games/<id>/` with `core.py` (implements `games.engine.Game`),
    `config.py` (a `RuleConfig` dataclass declaring effect weights/durations),
    optional `effects.py`, and `dto.py` (DTO classes own serialization).
