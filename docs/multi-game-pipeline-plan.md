@@ -1,133 +1,138 @@
-# Multi-Game Pipeline — Implementation Plan
+# Multi-Game Pipeline — Implementation Plan (v2, prototyping)
 
-Goal: evolve the 3D Snake codebase into a pipeline that can host additional games,
-keeping the existing invariants (pure, I/O-free game cores; service contracts;
-single authoritative server-side loop; thin REST transport; MVVM frontend).
+Goal: evolve the 3D Snake codebase into a pipeline that can host additional games.
 
-Each phase is independently shippable. Work top-down; check off todos as they land.
+**Prototyping stance:** no players yet, no backward compatibility. Legacy routes,
+old JSON stores, and the old wire format may be deleted or broken outright — do
+not write migration shims, redirects, or golden fixtures for the old formats.
+What must be right *now* is the set of **patterns and contracts**, so the system
+can be refactored later without rewrites.
+
+## Refactorability principles (the non-negotiables)
+
+- [ ] **Pure cores:** game logic lives in `games/<id>/` with zero I/O and an
+      injectable RNG; fully testable with pytest.
+- [ ] **Contracts over implementations:** everything consumers touch is a
+      `Protocol` (engine, session, persistence, settings, transport, view);
+      concrete impls are swappable without touching consumers.
+- [ ] **One authoritative stepper per session:** clients only submit actions and
+      read state; the server owns all state transitions.
+- [ ] **No global mutable game state:** one game instance per session, never on
+      `app.state` as a singleton.
+- [ ] **Versioned wire envelope** (`{v, gameId, ...}`) so the frontend shell and
+      future clients can evolve independently of individual games.
+- [ ] **Shared contract test suite** every `Game` implementation must pass.
 
 ---
 
-## Phase 0 — Baseline hygiene
+## Phase 0 — Contracts first (define the seams before the code)
 
-- [ ] Add a shared **contract test suite** (`tests/contracts/`) that any `Game`
-      implementation must pass (state round-trip, tick determinism with seeded RNG,
-      action validation, terminal-state handling). Port the relevant assertions
-      from the existing snake tests as the first implementation.
-- [ ] Add CI (GitHub Actions) running `python -m pytest tests/ -q` on every PR so
-      each phase below is gated.
-- [ ] Pin `requirements.txt` versions (or add `requirements-lock.txt`) so the
-      pipeline baseline is reproducible.
-- [ ] Document the invariants in `CONTRIBUTING.md`: pure core, no I/O in `games/`,
-      one stepper per session, contracts over implementations.
+Define all protocols and the contract test suite in one pass, with snake as the
+reference implementation:
 
-## Phase 1 — Game registry and generic routes
+- [ ] `Game` protocol (in `snake/engine.py`): `init(config) -> GameState`,
+      `state()`, `apply_action(player, action)`, `tick() -> GameState`,
+      plus `max_players()`, `is_terminal()`, and a versioned state schema
+      (`state_schema_version`) for future replay/migration.
+- [ ] Abstract `GameState` base (serialization via DTOs, not `to_dict()` on the
+      domain model — the `Serializable` protocol belongs to DTO classes).
+- [ ] `SessionService`, `ScoreService`, `LeaderboardService` (keyed by
+      `game_id`), `SettingsService` (keyed by `user_id`), `Transport` protocols.
+- [ ] Shared contract test suite in `tests/contracts/`: state round-trip, tick
+      determinism with seeded RNG, action validation, terminal-state handling.
+      Port existing snake test assertions as the first implementation.
+- [ ] CI (GitHub Actions) running `python -m pytest tests/ -q` on every PR.
+- [ ] Pin dependency versions for a reproducible baseline.
+- [ ] `CONTRIBUTING.md` documenting the principles above as the definition of
+      "done" for any new game.
 
-- [ ] Introduce the generic `Game` protocol in `snake/contracts.py` (or a new
-      `snake/engine.py`): `init(config) -> GameState`, `state()`,
-      `apply_action(player, action)`, `tick() -> GameState`.
-- [ ] Make `InMemoryGameService` implement the `Game` protocol without changing
-      its public snake behavior (adapter or rename + alias).
-- [ ] Create `snake/games/__init__.py` with a registry: `register(game_id, factory)`,
-      `get(game_id)`, `list_games()`; register `"snake"` as the first entry.
-- [ ] Generalize routes in `snake/app.py` to `/api/games/{game_id}/state`,
-      `/api/games/{game_id}/new`, `/api/games/{game_id}/action`, plus
-      `GET /api/games` listing available games. Keep the legacy `/api/*` routes
-      as thin redirects during migration.
-- [ ] Generalize `LeaderboardService` to `submit(user_id, game_id, mode, score)`
-      and `top(game_id, mode, limit)`; migrate `leaderboard.json` with a versioned
-      read/write (backfill old single/multi boards under `game_id="snake"`).
-- [ ] Update `schemas.py` with per-game request/response envelopes:
-      `{gameId, state, players, status, ...}`.
+## Phase 1 — Registry, generic routes, top-level `games/` package
+
+- [ ] Move the game code to a top-level `games/` package: `games/snake/` is the
+      first entry (pure core + config + effects + dto). Delete the old
+      `snake/core/game.py` path; no aliases.
+- [ ] `games/registry.py`: `register(game_id, factory)`, `get(game_id)`,
+      `list_games()` (each entry advertises `{id, name, realTime, maxPlayers}`).
+- [ ] Generic routes in `snake/app.py`: `GET /api/games`,
+      `/api/games/{game_id}/new`, `/api/games/{game_id}/state`,
+      `/api/games/{game_id}/action`. Delete the legacy `/api/*` routes outright.
+- [ ] Generic envelope in `schemas.py`: `{v: 1, gameId, status, players, state,
+      meta}`; snake's DTO produces `state`.
 - [ ] Port `tests/test_api.py` to the generic routes; add registry tests.
 
-## Phase 2 — Session-scoped game instances (kill the singletons)
+## Phase 2 — Session-scoped instances (kill the singletons)
 
-- [ ] Introduce `GameSession`: owns one game instance + one loop + (user_id, mode)
-      context, keyed by a session id stored in the user cookie or returned by
-      `/new`.
-- [ ] Change `GameLoop` to be constructed per session instead of living once on
-      `app.state`; remove the mutable `set_context` race by passing context at
-      construction.
-- [ ] Add a `SessionService` contract (in-memory impl first, JSON-file or DB
-      later) managing session lifecycle: create, resolve from request, expire
-      idle sessions (e.g. after 30 min).
-- [ ] Update `dependencies.py` providers to resolve the session from the
-      request instead of global `app.state` singletons.
-- [ ] Tests: two concurrent sessions advance independently; session expiry
-      stops its loop; loop task is cancelled on session close.
-- [ ] Verify no shared mutable state remains between sessions (audit
-      `GameLoop._user_id/_mode`, global settings).
+- [ ] `GameSession`: one game instance + one loop + (user_id, mode) context,
+      keyed by a session id (cookie or returned by `/new`).
+- [ ] Construct `GameLoop` per session; remove `set_context` by passing context
+      at construction. Note for the future: a session owns a live asyncio task,
+      so any future multi-process/DB-backed session store needs a loop
+      claim/lease strategy — keep the `SessionService` interface shaped for it.
+- [ ] `SessionService` in-memory impl with idle expiry (e.g. 30 min); interface
+      allows a shared store later.
+- [ ] Providers in `dependencies.py` resolve the session from the request.
+- [ ] Tests: two concurrent sessions advance independently; expiry cancels the
+      loop; audit that no mutable game state remains on `app.state`.
 
-## Phase 3 — Serialization out of the domain
+## Phase 3 — DTO layer and frontend envelope
 
-- [ ] Define a `Serializable` protocol (`to_dict()`) implemented by DTO classes,
-      not by domain models.
-- [ ] Create `snake/games/snake/dto.py` with `SnakeStateDTO.from_state(state)`;
-      remove `GameState.to_dict()` (or keep it temporarily as a deprecated shim).
-- [ ] Standardize the wire envelope in `schemas.py` so the frontend shell can
-      render any game: `{gameId, status, players: [...], state: {...}, meta}`.
-- [ ] Update `static/api.js`/`viewmodel.js` to consume the envelope and dispatch
-      on `gameId`.
-- [ ] Tests: DTO round-trip equals old `to_dict()` output for snake (golden
-      fixture) so the frontend migration is safe.
+- [ ] `games/snake/dto.py` with `SnakeStateDTO.from_state(state)`; remove
+      `GameState.to_dict()` — the wire format is free to change, no golden
+      fixtures against the old one.
+- [ ] Frontend: `static/api.js`/`viewmodel.js` consume the versioned envelope
+      and dispatch on `gameId`.
 
-## Phase 4 — Pluggable rules and effects
+## Phase 4 — Generic rules/effects contract (pipeline-level, not snake-only)
 
-- [ ] Replace the imperative `_apply_fruit` branches with an effect registry:
-      `effects.register(FruitKind.APPLE, handler(state, player))` in
-      `snake/games/snake/effects.py`.
-- [ ] Move `FRUIT_KIND_WEIGHTS`, `FRUIT_DURATION_S`, grid resize bounds, and
-      star duration into a per-game config dataclass loaded from
-      `snake/games/snake/config.py` (or JSON), injected into the game service.
-- [ ] Extract spawn logic (`_spawn_snake`, `_spawn_fruit`, `_free_cells`) into
-      a `Board`/`Spawner` helper so new games can reuse grid occupancy utilities.
-- [ ] Tests: register a dummy effect in tests and assert it fires; config
-      override changes fruit weights deterministically with a seeded RNG.
+- [ ] Define the pipeline-wide rule contract: games register effects/handlers
+      (`register(kind, handler)`) and declare weights/durations in a config
+      dataclass — this is the *generic* pattern every game follows, not a
+      snake-specific one.
+- [ ] Snake's `games/snake/effects.py` + `config.py` as the reference
+      implementation; extract shared grid-occupancy/spawn helpers into
+      `games/common/board.py`.
+- [ ] Tests: contract suite covers effect registration; seeded-RNG test proves
+      config overrides are deterministic.
 
-## Phase 5 — Per-user settings and identity hardening
+## Phase 5 — Per-user settings
 
-- [ ] Key `SettingsService` by `user_id` (`get(user_id)`, `set(user_id, ...)`);
-      keep a global default for anonymous users; migrate `settings.json`.
-- [ ] Add settings to the session context so each user's speed/torus follow
-      them across sessions.
-- [ ] Tests: two users get independent settings; anonymous fallback works.
+- [ ] `SettingsService` keyed by `user_id` with an anonymous default
+      (`settings.json` may be reset — no migration needed).
+- [ ] Tests: independent settings per user; anonymous fallback.
 
 ## Phase 6 — Frontend game shell
 
-- [ ] Turn `static/main.js` into a composition root that loads a game module by
-      id: `games/<id>/{scene.js, view.js, input.js, hud.js}` behind a shared
-      `GameView` interface (`render(envelope)`, `onInput(action)`).
-- [ ] Keep snake's current modules as `games/snake/*` unchanged in behavior.
-- [ ] Add a minimal game picker on `index.html` fed by `GET /api/games`.
-- [ ] Smoke-test in browser: snake renders and plays exactly as before.
+- [ ] `static/main.js` as composition root loading `static/games/<id>/` modules
+      (`scene.js`, `view.js`, `input.js`, `hud.js`) behind a designed `GameView`
+      interface: `render(envelope)`, `onInput(action)`, `dispose()`, with
+      per-game asset namespacing and an error boundary so one game's throw
+      cannot kill the shell.
+- [ ] Snake's modules move to `static/games/snake/` unchanged in behavior.
+- [ ] Game picker on `index.html` fed by `GET /api/games`.
+- [ ] JS-side contract tests for `GameView` (not just a manual smoke test).
 
-## Phase 7 — Transport adapter (preparation for real-time games)
+## Phase 7 — Transport adapter (real-time seam)
 
-- [ ] Define a `Transport` protocol behind `api.js`: `poll()` vs `subscribe()`.
-- [ ] Implement the WebSocket adapter (`/ws/games/{game_id}`) server-side,
-      pushing state deltas after each tick; keep REST polling as the fallback.
-- [ ] Frontend: `viewmodel.js` subscribes when the game advertises
-      `realTime: true` in `/api/games`, else polls.
-- [ ] Tests: integration test driving a game over WebSocket (use FastAPI
-      TestClient websocket support).
+- [ ] `Transport` protocol behind `api.js`: `poll()` vs `subscribe()`.
+- [ ] WebSocket route `/ws/games/{game_id}` pushing state after each tick;
+      REST polling remains the fallback; games advertise `realTime` in the
+      registry.
+- [ ] `viewmodel.js` subscribes when `realTime` is set, else polls.
+- [ ] Integration test driving a game over WebSocket.
 
-## Phase 8 — Second game as pipeline proof (e.g. a grid-based game)
+## Phase 8 — Second game as pipeline proof
 
-- [ ] Scaffold `snake/games/<new-game>/` with pure core + config + effects +
-      DTO, registered in the registry.
-- [ ] Implement its `Game` core and pass the shared contract test suite from
-      Phase 0.
-- [ ] Add its frontend module under `static/games/<new-game>/`.
-- [ ] Leaderboard entries appear under the new `game_id` automatically.
-- [ ] End-to-end test: create session, play a few ticks via API, score lands on
-      the correct board.
+- [ ] Scaffold `games/<new-game>/` (core + config + effects + dto) registered
+      in the registry; passes the shared contract suite from Phase 0.
+- [ ] Frontend module under `static/games/<new-game>/`.
+- [ ] End-to-end test: new session, play ticks via API, score lands on the
+      correct per-game leaderboard.
 
 ---
 
-## Cross-cutting Definition of Done (every phase)
+## Definition of Done (every phase)
 
-- [ ] `python -m pytest tests/ -q` green.
-- [ ] No new global mutable state introduced.
-- [ ] New code depends only on contracts/protocols, not concrete implementations.
-- [ ] README architecture section updated to reflect the change.
+- [ ] `python -m pytest tests/ -q` green (plus JS contract tests from Phase 6).
+- [ ] No new global mutable state; consumers depend only on protocols.
+- [ ] New game logic contains no I/O.
+- [ ] README architecture section updated.
