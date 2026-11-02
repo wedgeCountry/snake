@@ -89,6 +89,13 @@ def _with_cookies(response: JSONResponse, user_id: str, is_new: bool,
     return response
 
 
+def _session_for_game(session, game_id: str):
+    """A session cookie is only valid for the game that created it."""
+    if session is None or session.game_id != game_id:
+        raise HTTPException(status_code=404, detail="no active session")
+    return session
+
+
 def _envelope_for(session, user_id: str, score: ScoreService,
                   settings: SettingsService, leaderboard: LeaderboardService) -> dict:
     state = session.game.state()
@@ -150,6 +157,7 @@ def api_state(
     leaderboard: LeaderboardService = Depends(get_leaderboard_service),
 ) -> JSONResponse:
     user_id, is_new = _resolve_user(request, user)
+    _session_for_game(session, game_id)
     body = _envelope_for(session, user_id, score, settings, leaderboard)
     return _with_cookies(JSONResponse(body), user_id, is_new, None, False)
 
@@ -162,6 +170,7 @@ def api_action(
 ) -> dict:
     if req.player >= get_game_info(game_id).max_players:
         raise HTTPException(status_code=422, detail=f"player out of range for {game_id}")
+    _session_for_game(session, game_id)
     session.game.apply_action(req.player, {**req.action, "player": req.player})
     return {"ok": True}
 
@@ -204,7 +213,7 @@ async def ws_game(websocket: WebSocket, game_id: str):
     await websocket.accept()
     session_id = websocket.query_params.get("session")
     loop = websocket.app.state.session_loops.get(session_id or "")
-    if loop is None:
+    if loop is None or loop._session.game_id != game_id:
         await websocket.close(code=4404)
         return
     session = loop._session

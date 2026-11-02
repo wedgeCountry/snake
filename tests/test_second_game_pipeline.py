@@ -73,3 +73,25 @@ def test_collector_end_to_end_via_api(client):
     assert lb["top"][0]["score"] == game.state().score
     lb_snake = client.get("/api/leaderboard/snake/single").json()
     assert lb_snake["top"] == []
+
+
+def test_session_cookie_is_scoped_to_its_game(client):
+    # page load auto-starts the first game (collector); selecting snake must
+    # not receive the collector session's state
+    r = client.post("/api/games/collector/new", json={"torus": True})
+    assert r.status_code == 200
+    session_id = client.cookies.get(SESSION_COOKIE)
+    client.portal.call(app.state.session_loops[session_id].stop)
+
+    assert client.get("/api/games/snake/state").status_code == 404
+    r = client.post("/api/games/snake/action",
+                    json={"player": 0, "action": {"direction": "up"}})
+    assert r.status_code == 404
+
+    # starting snake with the same cookie still works and returns snake state
+    r = client.post("/api/games/snake/new", json={"torus": True, "mode": "single"})
+    assert r.status_code == 200
+    env = r.json()
+    assert env["gameId"] == "snake"
+    assert "snake" in env["state"]
+    client.portal.call(app.state.session_loops[client.cookies.get(SESSION_COOKIE)].stop)
