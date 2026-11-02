@@ -1,5 +1,5 @@
 /* View — pure rendering of ViewModel state into the Three.js scene. */
-window.SnakeView = class SnakeView {
+window.GameView_snake = window.SnakeView = class SnakeView {
   constructor(canvas) {
     this.scene = new SnakeScene(canvas);
     this.hud = new SnakeHud();

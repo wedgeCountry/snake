@@ -1,25 +1,23 @@
+"""Snake core: pure game logic implementing the pipeline `Game` protocol.
+
+Zero I/O, injectable RNG, fully testable with pytest.
+"""
+
 from __future__ import annotations
 
 import random
+from typing import Any
 
-from ..models import FRUIT_DURATION_S, Cell, Direction, Fruit, FruitKind, GameState
-
-MIN_STEP_MS = 60
-MAX_STEP_MS = 400
-DEFAULT_STEP_MS = 260
-
-MIN_GRID_SIZE = 6
-MAX_GRID_SIZE = 16
-GRID_RESIZE_STEP = 2
-STAR_STEPS = 8
-
-FRUIT_KIND_WEIGHTS: list[tuple[FruitKind, int]] = [
-    (FruitKind.APPLE, 50),
-    (FruitKind.REVERSE, 12),
-    (FruitKind.GROW_GRID, 12),
-    (FruitKind.SHRINK_GRID, 12),
-    (FruitKind.STAR, 14),
-]
+from ..common.board import free_cells, weighted_choice
+from ..engine import Game, GameState
+from .config import (
+    DEFAULT_STEP_MS,
+    MAX_GRID_SIZE,
+    MIN_GRID_SIZE,
+    SnakeConfig,
+)
+from .effects import build_effects
+from .models import Cell, Direction, Fruit, FruitKind, SnakeState
 
 
 def _spawn_snake(n: int, head: Cell, direction: Direction) -> list[Cell]:
@@ -28,29 +26,34 @@ def _spawn_snake(n: int, head: Cell, direction: Direction) -> list[Cell]:
     return [head, *tail]
 
 
-class InMemoryGameService:
-    """Default GameService implementation. Deterministic via injectable RNG.
+class SnakeGame:
+    """One snake game instance. Multiplayer: mode="multi" runs two snakes on
+    one board; a dead snake loses (status "dead", `loser` set to its index)."""
 
-    Multiplayer: mode="multi" runs two snakes on one board; each player has
-    its own direction queue and score. A dead snake loses (status "dead",
-    `loser` set to its index); in single mode the semantics are unchanged.
-    """
-
-    def __init__(self, rng: random.Random | None = None) -> None:
+    def __init__(self, rng: random.Random | None = None, config: SnakeConfig | None = None) -> None:
         self._rng = rng or random.Random()
-        self._state: GameState | None = None
+        self._config = config or SnakeConfig()
+        self._effects = build_effects()
+        self._state: SnakeState | None = None
         self._dir_queues: list[list[Direction]] = []
 
-    def new_game(
-        self,
-        torus: bool = True,
-        grid_size: int = 10,
-        step_time_ms: int = DEFAULT_STEP_MS,
-        mode: str = "single",
-    ) -> GameState:
-        n = grid_size
+    @property
+    def rng(self) -> random.Random:
+        return self._rng
+
+    @property
+    def config(self) -> SnakeConfig:
+        return self._config
+
+    @property
+    def state_schema_version(self) -> int:
+        return SnakeState.state_schema_version
+
+    def init(self, config: Any = None) -> GameState:
+        cfg = config if isinstance(config, SnakeConfig) else self._config
+        n = cfg.grid_size
         mid = n // 2
-        if mode == "multi":
+        if cfg.mode == "multi":
             snakes = [
                 _spawn_snake(n, Cell(2, mid, mid), Direction(1, 0, 0)),
                 _spawn_snake(n, Cell(n - 3, mid, mid), Direction(-1, 0, 0)),
@@ -62,27 +65,38 @@ class InMemoryGameService:
             directions = [Direction(1, 0, 0)]
             scores = [0]
         self._dir_queues = [[] for _ in snakes]
-        state = GameState(
+        state = SnakeState(
             grid_size=n,
             snake=snakes[0],
             direction=directions[0],
             food=Cell(0, mid, mid + 1),
             score=scores[0],
-            step_time_ms=step_time_ms,
-            torus=torus,
+            step_time_ms=cfg.step_time_ms,
+            torus=cfg.torus,
             snakes=snakes,
             directions=directions,
             scores=scores,
-            mode=mode,
+            mode=cfg.mode,
         )
         state.food = self._spawn_fruit(state)
         self._state = state
+        self._config = cfg
         return state
 
-    def state(self) -> GameState:
+    def state(self) -> SnakeState:
         if self._state is None:
-            return self.new_game()
+            return self.init()
         return self._state
+
+    def max_players(self) -> int:
+        return 2
+
+    def is_terminal(self) -> bool:
+        return self.state().status != "running"
+
+    def apply_action(self, player: int, action: dict[str, Any]) -> None:
+        direction = Direction.from_name(str(action["direction"]))
+        self.set_direction(direction, player=player)
 
     def set_direction(self, direction: Direction, player: int = 0) -> None:
         state = self.state()
@@ -95,11 +109,11 @@ class InMemoryGameService:
         if len(queue) < 4:
             queue.append(direction)
 
-    def _drain_direction(self, state: GameState, player: int) -> None:
-        if self._dir_queues[player]:
-            state.directions[player] = self._dir_queues[player].pop(0)
+    def clear_queue(self, player: int) -> None:
+        if 0 <= player < len(self._dir_queues):
+            self._dir_queues[player].clear()
 
-    def step(self) -> GameState:
+    def tick(self) -> SnakeState:
         state = self.state()
         if state.status != "running":
             return state
@@ -153,11 +167,11 @@ class InMemoryGameService:
             state.snakes[i] = [new_head, *state.snakes[i]]
             if kind is not None:
                 any_eating = True
-                self._apply_fruit(state, i, kind)
+                self._effects.handle(kind.value, state, i, self)
             else:
                 state.snakes[i].pop()
         if any_eating:
-            free = self._free_cells(state)
+            free = self.free_cells(state)
             if not free:
                 state.status = "won"
             else:
@@ -165,74 +179,42 @@ class InMemoryGameService:
                 state.fruit_age_ms = 0
         return state
 
-    def _age_fruit(self, state: GameState) -> None:
+    # Backwards-compatible alias for the old step() name.
+    def step(self) -> SnakeState:
+        return self.tick()
+
+    def _drain_direction(self, state: SnakeState, player: int) -> None:
+        if self._dir_queues[player]:
+            state.directions[player] = self._dir_queues[player].pop(0)
+
+    def _age_fruit(self, state: SnakeState) -> None:
         """Timed fruit kinds despawn after their duration and respawn."""
-        duration_s = FRUIT_DURATION_S.get(state.food.kind)
+        duration_s = self._config.fruit_durations_s.get(state.food.kind)
         if duration_s is None:
             return
         state.fruit_age_ms += state.step_time_ms
         if state.fruit_age_ms < duration_s * 1000:
             return
-        free = self._free_cells(state)
+        free = self.free_cells(state)
         if free:
             state.food = self._spawn_fruit(state)
             state.fruit_age_ms = 0
 
-    def _apply_fruit(self, state: GameState, player: int, kind: FruitKind) -> None:
-        if kind == FruitKind.APPLE:
-            state.scores[player] += 10
-            state.step_time_ms = max(MIN_STEP_MS, state.step_time_ms - 4)
-        elif kind == FruitKind.REVERSE:
-            state.scores[player] += 5
-            d = state.directions[player]
-            state.directions[player] = Direction(-d.x, -d.y, -d.z)
-            state.snakes[player].reverse()  # head/tail swap: safe 180-degree turn
-            self._dir_queues[player].clear()
-        elif kind == FruitKind.GROW_GRID:
-            state.scores[player] += 5
-            self._resize_grid(state, GRID_RESIZE_STEP)
-        elif kind == FruitKind.SHRINK_GRID:
-            state.scores[player] += 5
-            self._resize_grid(state, -GRID_RESIZE_STEP)
-        elif kind == FruitKind.STAR:
-            state.scores[player] += 15
-            state.star_steps[player] = STAR_STEPS
-
-    def _resize_grid(self, state: GameState, delta: int) -> None:
-        new_n = min(MAX_GRID_SIZE, max(MIN_GRID_SIZE, state.grid_size + delta))
-        if new_n == state.grid_size:
-            return
-        old_n = state.grid_size
-        for snake in state.snakes:
-            snake[:] = [Cell(min(c.x, new_n - 1), min(c.y, new_n - 1), min(c.z, new_n - 1)) for c in snake]
-        if state.food.cell.x < new_n and state.food.cell.y < new_n and state.food.cell.z < new_n:
-            pass
-        else:
-            state.food = Fruit(self._rng.choice(self._free_cells(state)), state.food.kind)
-        state.grid_size = new_n
-        state.food = Fruit(Cell(state.food.cell.x % new_n, state.food.cell.y % new_n, state.food.cell.z % new_n), state.food.kind)
-        if not state.torus:
-            # snakes clamped into the smaller box may now overlap; that is
-            # resolved on the next collision check, so keep status running
-            pass
-
-    def _free_cells(self, state: GameState) -> list[Cell]:
-        occupied = {c for s in state.snakes for c in s}
-        occupied.add(state.food.cell)
-        n = state.grid_size
-        return [Cell(x, y, z) for x in range(n) for y in range(n) for z in range(n)
-                if Cell(x, y, z) not in occupied]
-
-    def _spawn_fruit(self, state: GameState) -> Fruit:
-        free = self._free_cells(state)
-        if not free:
-            return state.food
-        cell = self._rng.choice(free)
-        kinds = [k for k, _ in FRUIT_KIND_WEIGHTS]
-        weights = [w for _, w in FRUIT_KIND_WEIGHTS]
-        return Fruit(cell, self._rng.choices(kinds, weights=weights, k=1)[0])
-
-    def set_torus(self, enabled: bool) -> GameState:
+    def set_torus(self, enabled: bool) -> SnakeState:
         state = self.state()
         state.torus = enabled
         return state
+
+    def free_cells(self, state: SnakeState) -> list[Cell]:
+        occupied = {c for s in state.snakes for c in s}
+        occupied.add(state.food.cell)
+        n = state.grid_size
+        return [Cell(x, y, z) for x, y, z in free_cells(n, occupied)]
+
+    def _spawn_fruit(self, state: SnakeState) -> Fruit:
+        free = self.free_cells(state)
+        if not free:
+            return state.food
+        cell = self._rng.choice(free)
+        kind = FruitKind(weighted_choice(self._rng, [(k.value, w) for k, w in self._config.fruit_weights]))
+        return Fruit(cell, kind)

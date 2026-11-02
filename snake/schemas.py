@@ -1,22 +1,19 @@
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
 DIRECTION_PATTERN = "^(left|right|up|down|forward|back)$"
 
-LeaderboardMode = Literal["single", "multi"]
-
-
-class DirectionRequest(BaseModel):
-    direction: str = Field(pattern=DIRECTION_PATTERN)
-    player: int = Field(default=0, ge=0, le=1)
-
 
 class NewGameRequest(BaseModel):
+    game_id: str = "snake"
+    mode: str = "single"
     torus: bool = True
-    mode: LeaderboardMode = "single"
+
+
+class ActionRequest(BaseModel):
+    player: int = Field(default=0, ge=0)
+    action: dict = Field(default_factory=dict)
 
 
 class SettingsRequest(BaseModel):
