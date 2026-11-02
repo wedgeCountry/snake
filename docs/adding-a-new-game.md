@@ -1,7 +1,7 @@
 # Adding a new game — minimal guide
 
 A new game is **one Python package + one registration line + one JS view module**.
-The contract suite picks it up automatically. No changes to `snake/app.py`, routes,
+The contract suite picks it up automatically. No changes to `server/app.py`, routes,
 or the frontend shell are needed.
 
 ## Before you start

@@ -8,8 +8,8 @@ from games.snake.config import SnakeConfig
 from games.snake.core import SnakeGame
 from games.snake.dto import SnakeStateDTO
 from games.snake.models import Cell, Direction
-from snake.services.score import JsonFileScoreService
-from snake.session import InMemorySessionService, SessionLoop
+from server.services.score import JsonFileScoreService
+from server.session import InMemorySessionService, SessionLoop
 
 
 def make_game(seed: int = 1) -> SnakeGame:
