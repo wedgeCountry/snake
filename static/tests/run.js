@@ -57,6 +57,11 @@ function env(status, score) {
   assert(viewSrc.includes('dispose()'), 'snake view implements dispose (GameView contract)');
   const inputSrc = fs.readFileSync(path.join(__dirname, '..', 'games', 'snake', 'input.js'), 'utf8');
   assert(inputSrc.includes('dispose()'), 'snake input implements dispose (listener cleanup)');
+  for (const key of ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown']) {
+    assert(inputSrc.includes(key), 'snake input maps desktop key ' + key);
+  }
+  assert(/if \(vm\.running\) vm\.queueDirection\(map\[e\.key\]\);\s*else this\.onStart\(\)/.test(inputSrc),
+    'snake input starts the game on arrow/PageUp/PageDown when idle (desktop)');
 
   // ViewModel consumes the versioned envelope and dispatches on gameId
   const game = { id: 'snake', name: '3D Snake', realTime: false, maxPlayers: 2 };

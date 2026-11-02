@@ -101,7 +101,11 @@ window.SnakeInput = class SnakeInput {
       };
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
       if (mapP2[k] && vm.mode === 'multi') { e.preventDefault(); vm.queueDirection(mapP2[k], 1); return; }
-      if (map[e.key]) { e.preventDefault(); vm.queueDirection(map[e.key]); }
+      if (map[e.key]) {
+        e.preventDefault();
+        if (vm.running) vm.queueDirection(map[e.key]);
+        else this.onStart();
+      }
     });
     this._listen(window, 'wheel', (e) => {
       e.preventDefault();
