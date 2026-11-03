@@ -30,7 +30,13 @@ window.GameView_snake = window.SnakeView = class SnakeView {
   render(vm, now) {
     const sc = this.scene;
     const s = vm.state;
-    if (!s) return;
+    if (!s) {
+      // no session state yet (start screen): still draw the empty 3D grid
+      // so the board is visible immediately instead of after the first start
+      sc.updateCamera(now);
+      sc.render();
+      return;
+    }
     sc._torus = vm.torus;
     if (s.gridSize && s.gridSize !== sc.N) sc.setGridSize(s.gridSize);
     const snakes = s.snakes || [s.snake];

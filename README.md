@@ -52,8 +52,9 @@ python -m pytest tests/ -q   # inkl. tests/contracts/
 node static/tests/run.js     # JS GameView Contract-Tests
 ```
 
-GUI-Test (headless Chromium via Playwright: klickt Start, waehlt Snake im
-Game-Picker und drueckt dann jede Schaltflaeche einmal der Reihe nach):
+GUI-Test (headless Chromium via Playwright: waehlt zuerst Snake im Game-Picker,
+klickt dann den Start-Screen und drueckt danach jede Schaltflaeche einmal der
+Reihe nach):
 
 ```bash
 pip install -r requirements.txt -r requirements-gui.txt

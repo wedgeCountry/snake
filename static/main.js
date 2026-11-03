@@ -6,6 +6,7 @@
     vm: null,
     view: null,
     game: null,
+    overlayTap: null,
   };
 
   async function loadScript(src) {
@@ -21,12 +22,13 @@
   async function loadGameModule(gameId) {
     const base = '/static/games/' + gameId + '/';
     await loadScript(base + 'view.js');
-    // optional per-game modules; snake ships scene/hud/input, others may not
-    for (const src of ['scene.js', 'hud.js', 'input.js']) {
-      await fetch(base + src, { method: 'HEAD' }).then((r) => {
-        if (r.ok) return loadScript(base + src);
-      });
-    }
+    // optional per-game modules; snake ships scene/hud/input, others may not.
+    // They only reference each other at construction time, so they can load
+    // in parallel once view.js is in.
+    await Promise.all(['scene.js', 'hud.js', 'input.js'].map(async (src) => {
+      const r = await fetch(base + src, { method: 'HEAD' });
+      if (r.ok) await loadScript(base + src);
+    }));
   }
 
   function freshCanvas() {
@@ -38,9 +40,31 @@
     return canvas;
   }
 
+  function showOverlayText(title, msg, cta) {
+    document.getElementById('ovTitle').textContent = title;
+    document.getElementById('ovMsg').textContent = msg;
+    document.getElementById('ovCta').textContent = cta;
+    document.getElementById('overlay').classList.remove('hidden');
+  }
+
+  function showPickerPrompt() {
+    document.body.classList.add('no-game');
+    showOverlayText('Spiel w\u00e4hlen', 'W\u00e4hle ein Spiel aus der Liste.', '');
+  }
+
   async function startGame(game) {
     disposeGame();
     shell.game = game;
+    try {
+      await startGameInner(game);
+    } catch (e) {
+      // error boundary: a broken game module must not kill the shell
+      document.body.classList.add('no-game');
+      showOverlayText(game.name, 'Spiel konnte nicht geladen werden: ' + e.message, '');
+    }
+  }
+
+  async function startGameInner(game) {
     await loadGameModule(game.id);
     const Ctor = window['GameView_' + game.id];
     if (!Ctor) throw new Error('no GameView for game: ' + game.id);
@@ -75,6 +99,7 @@
     }
 
     view.dom.overlay.addEventListener('pointerdown', startIfNeeded);
+    shell.overlayTap = startIfNeeded;
     view.dom.torusBtn.addEventListener('pointerdown', (e) => { e.stopPropagation(); vm.toggleTorus(); });
     view.dom.modeBtn.addEventListener('pointerdown', (e) => { e.stopPropagation(); vm.toggleMode(); });
     view.dom.speed.addEventListener('input', (e) => vm.setSpeed(parseInt(e.target.value, 10)));
@@ -88,7 +113,6 @@
         const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
         if (map[e.key]) { e.preventDefault(); vm.running ? vm.queueDirection(map[e.key]) : startIfNeeded(); }
       });
-      view.dom.overlay.addEventListener('pointerdown', startIfNeeded);
     }
 
     function frame(now) {
@@ -100,10 +124,17 @@
       await vm.init();
     } catch (e) {}
     view.updateHud(vm);
+    document.body.classList.remove('no-game');
+    // no running session yet: show the game's start screen
+    if (!vm.running) view.showOverlay(game.name, 'Bereit zum Spielen?', 'Tippen zum Starten');
     requestAnimationFrame(frame);
   }
 
   function disposeGame() {
+    if (shell.overlayTap) {
+      document.getElementById('overlay').removeEventListener('pointerdown', shell.overlayTap);
+      shell.overlayTap = null;
+    }
     if (shell.vm) shell.vm._stopTransport();
     if (shell.input && shell.input.dispose) shell.input.dispose();
     if (shell.view && shell.view.dispose) shell.view.dispose();
@@ -124,7 +155,8 @@
       btn.addEventListener('click', () => startGame(g));
       picker.appendChild(btn);
     }
-    if (games.length > 0) await startGame(games[0]);
+    // first step is always "select a game"; no game is auto-started
+    showPickerPrompt();
   }
 
   init();

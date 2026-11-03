@@ -1,7 +1,8 @@
 """GUI tests: drive the real frontend in a headless Chromium via Playwright.
 
-The test clicks start, selects the snake program in the game picker and then
-presses each button on the page once after the other.
+The test loads the page, selects the snake game in the game picker (the first
+step is "select a game" — nothing auto-starts), taps the "Start" screen and
+then presses each button on the page once after the other.
 
 Run with:
     pip install -r requirements.txt -r requirements-gui.txt
@@ -22,7 +23,6 @@ pytest.importorskip("playwright")
 from playwright.sync_api import sync_playwright  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-THREE_JS_URL = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
 
 
 def _free_port() -> int:
@@ -56,26 +56,10 @@ def server():
 
 
 @pytest.fixture(scope="module")
-def three_js():
-    # index.html loads three.js from a CDN; download it once so the browser
-    # request can be fulfilled locally even where the CDN is unreachable
-    try:
-        resp = httpx.get(THREE_JS_URL, timeout=30)
-        resp.raise_for_status()
-    except httpx.HTTPError as exc:
-        pytest.skip(f"three.js CDN unreachable: {exc}")
-    return resp.content
-
-
-@pytest.fixture(scope="module")
-def page(server, three_js):
+def page(server):
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        pg = browser.new_page()
-        pg.route("**://cdnjs.cloudflare.com/**three.min.js",
-                 lambda route: route.fulfill(
-                     content_type="application/javascript", body=three_js))
-        yield pg
+        yield browser.new_page()
         browser.close()
 
 
@@ -91,7 +75,7 @@ def _dismiss_overlay_if_shown(pg):
         pg.wait_for_selector("#overlay.hidden", state="attached", timeout=10000)
 
 
-def test_gui_start_select_snake_press_each_button(page, server):
+def test_gui_select_snake_start_press_each_button(page, server):
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
 
@@ -100,18 +84,27 @@ def test_gui_start_select_snake_press_each_button(page, server):
     picker.first.wait_for(timeout=10000)
     assert picker.count() >= 2, "game picker should list collector and snake"
 
-    # 1. click start (the "Tippen zum Starten" overlay starts the loaded game)
-    page.click("#overlay")
-    page.wait_for_selector("#overlay.hidden", state="attached", timeout=10000)
+    # 1. first step is "select a game": no game auto-starts, the prompt is shown
+    assert "hidden" not in (page.locator("#overlay").get_attribute("class") or ""), \
+        "select-a-game prompt should be visible before any game is chosen"
+    assert page.evaluate("document.body.classList.contains('no-game')"), \
+        "no game selected yet"
 
-    # 2. select the snake program in the game picker
-    _dismiss_overlay_if_shown(page)
+    # 2. select snake in the game picker -> the "Start" screen for snake appears
     page.evaluate("window.__cv = document.getElementById('scene')")
     page.click('#gamePicker button[data-game-id="snake"]')
     page.wait_for_function(
         "window.__cv !== document.getElementById('scene')", timeout=10000)
+    page.wait_for_function(
+        "!document.getElementById('overlay').classList.contains('hidden') && "
+        "document.getElementById('ovTitle').textContent.trim() === '3D Snake'",
+        timeout=10000)
 
-    # 3. press each button on the page once after the other; after each press
+    # 3. tap the start screen -> the game loop starts, overlay hides
+    page.click("#overlay")
+    page.wait_for_selector("#overlay.hidden", state="attached", timeout=10000)
+
+    # 4. press each button on the page once after the other; after each press
     # wait until the shell has settled (game switched / label updated).
     # pointerdown is dispatched directly on the button because a game-over
     # overlay may cover the header at any moment and would intercept a

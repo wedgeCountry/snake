@@ -71,6 +71,10 @@ function env(status, score) {
     'shell hides the "Tippen zum Starten" overlay once the game runs');
   assert(/let starting = false;[\s\S]*if \(starting \|\| vm\.running\) return;/.test(mainSrc),
     'startIfNeeded is re-entrancy guarded (pointerdown + touchend double fire)');
+  assert(!mainSrc.includes('startGame(games[0])'),
+    'shell does not auto-start a game; the first step is the game picker');
+  assert(mainSrc.includes('showPickerPrompt()'),
+    'shell shows the select-a-game prompt before any game is chosen');
 
   // ViewModel consumes the versioned envelope and dispatches on gameId
   const game = { id: 'snake', name: '3D Snake', realTime: false, maxPlayers: 2 };

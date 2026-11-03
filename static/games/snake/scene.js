@@ -22,7 +22,7 @@ window.SnakeScene = class SnakeScene {
     const sun = new THREE.DirectionalLight(0xffffff, 0.95);
     sun.position.set(0, this.N * 3, 0);
     sun.castShadow = true;
-    sun.shadow.mapSize.width = sun.shadow.mapSize.height = 2048;
+    sun.shadow.mapSize.width = sun.shadow.mapSize.height = 1024;
     const sc = this.N / 2 + 2;
     Object.assign(sun.shadow.camera, { left: -sc, right: sc, top: sc, bottom: -sc, far: this.N * 6 });
     this.scene.add(sun);
@@ -41,11 +41,21 @@ window.SnakeScene = class SnakeScene {
     this._buildFood();
     this._buildSegments();
 
-    window.addEventListener('resize', () => {
+    this._onResize = () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+    };
+    window.addEventListener('resize', this._onResize);
+  }
+
+  dispose() {
+    window.removeEventListener('resize', this._onResize);
+    if (this.renderer) {
+      this.renderer.dispose();
+      if (this.renderer.forceContextLoss) this.renderer.forceContextLoss();
+      this.renderer = null;
+    }
   }
 
   _cell(c) { return c - this.OFF; }
@@ -229,10 +239,10 @@ window.SnakeScene = class SnakeScene {
     this.boxEdges.material.opacity = this._torus ? 0.22 : 0.55;
     const sway = Math.sin(now * 0.0002) * 0.6 * this.zoomLevel;
     const z = this.zoomLevel;
-    const r = this.N * 1.35;
+    const r = this.N * 1.9;
     this.camera.position.set(
       (r * Math.sin(this.orbitAngle) + sway) * z,
-      this.N * 1.5 * z,
+      this.N * 2.0 * z,
       (r * Math.cos(this.orbitAngle) - sway) * z
     );
     this.camera.lookAt(0, 0.5, 0);
