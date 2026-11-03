@@ -55,3 +55,12 @@ class JsonFileLeaderboardService:
         board = self._board(game_id, mode)
         entries = sorted(board.items(), key=lambda kv: kv[1], reverse=True)
         return [{"userId": uid, "score": score} for uid, score in entries[:limit]]
+
+    def bests(self, user_id: str) -> dict:
+        """Cross-game profile: this user's best score per game and mode."""
+        out: dict = {}
+        for game_id, modes in self._boards.items():
+            per_mode = {mode: users[user_id] for mode, users in modes.items() if user_id in users}
+            if per_mode:
+                out[game_id] = per_mode
+        return out

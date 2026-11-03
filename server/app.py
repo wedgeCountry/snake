@@ -19,7 +19,6 @@ from fastapi.staticfiles import StaticFiles
 
 from games import list_games
 from games.registry import get as get_game_info
-from games.snake.config import SnakeConfig
 from .contracts import (
     SESSION_COOKIE,
     LeaderboardService,
@@ -102,6 +101,7 @@ def _envelope_for(session, user_id: str, score: ScoreService,
     state_dict = get_game_info(session.game_id).serialize(state)
     meta = {
         "best": score.get_best(session.game_id),
+        "userBest": leaderboard.get_best(user_id, session.game_id, session.mode),
         "stepTimeMs": settings.get_step_time_ms(user_id),
         "torus": settings.get_torus(user_id),
         "userId": user_id,
@@ -132,7 +132,8 @@ async def api_new_game(
     settings.set(user_id, {"torus": req.torus})
     session_id = sessions.create(game_id, user_id, req.mode)
     session = sessions.get(session_id)
-    cfg = SnakeConfig(step_time_ms=settings.get_step_time_ms(user_id), torus=req.torus, mode=req.mode)
+    # the game's own registered builder maps user settings + request to its config
+    cfg = info.build_config(settings.get(user_id), req.mode, req.torus)
     session.game.init(cfg)
     loops = request.app.state.session_loops
 
@@ -195,6 +196,20 @@ def api_settings(
     return response
 
 
+@app.get("/api/users/me/stats")
+def api_user_stats(
+    request: Request,
+    leaderboard: LeaderboardService = Depends(get_leaderboard_service),
+    user: UserService = Depends(get_user_service),
+) -> JSONResponse:
+    """Cross-game user profile: the caller's best score per game and mode."""
+    user_id, is_new = _resolve_user(request, user)
+    response = JSONResponse({"userId": user_id, "bests": leaderboard.bests(user_id)})
+    if is_new:
+        response.set_cookie(COOKIE_NAME, user_id, max_age=365 * 24 * 3600, httponly=True, samesite="lax")
+    return response
+
+
 @app.get("/api/leaderboard/{game_id}/{mode}")
 def api_leaderboard(
     game_id: str,
@@ -223,6 +238,8 @@ async def ws_game(websocket: WebSocket, game_id: str):
             payload = get_game_info(game_id).serialize(state)
             meta = {
                 "best": websocket.app.state.score_service.get_best(game_id),
+                "userBest": websocket.app.state.leaderboard_service.get_best(
+                    session.user_id, game_id, session.mode),
                 "userId": session.user_id,
             }
             await websocket.send_json(envelope(

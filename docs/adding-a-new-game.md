@@ -26,7 +26,15 @@ smallest working example. Rules of the pipeline:
 
    register("tictactoe", name="Tic-Tac-Toe", real_time=False, max_players=2,
             factory=lambda rng: TttGame(rng=rng), serialize=serialize)
+   # optional: map per-user settings + new-game request to your config dataclass,
+   # so the generic routes never import your game (default honors stepTimeMs only)
+   # register(..., build_config=lambda settings, mode, torus: TttConfig(...))
    ```
+
+   Leaderboard, best-score and user identity are already generic: scores land on
+   the per-game leaderboard automatically when the session ends, and the caller's
+   cross-game profile is served at `GET /api/users/me/stats`; the envelope's
+   `meta.userBest` carries the player's own best for the current game/mode.
 
    ```python
    # games/tictactoe/core.py (sketch — the Game protocol is in games/engine.py)

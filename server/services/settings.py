@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from games.snake.config import DEFAULT_STEP_MS, MAX_STEP_MS, MIN_STEP_MS
+# platform-wide step-time clamps (the speed slider is generic across games)
+MIN_STEP_MS = 60
+MAX_STEP_MS = 400
+DEFAULT_STEP_MS = 260
 
 ANONYMOUS_USER_ID = "anonymous"
 

@@ -5,19 +5,21 @@ from __future__ import annotations
 import random
 from typing import Any, Callable
 
-from .engine import Game, GameInfo
+from .engine import Game, GameInfo, default_build_config
 
 _REGISTRY: dict[str, GameInfo] = {}
 
 
 def register(game_id: str, name: str, real_time: bool, max_players: int,
              factory: Callable[[random.Random | None], Game],
-             serialize: Callable[[Any], dict]) -> None:
+             serialize: Callable[[Any], dict],
+             build_config: Callable[[dict, str, bool], Any] = default_build_config) -> None:
     if game_id in _REGISTRY:
         raise ValueError(f"game already registered: {game_id}")
     _REGISTRY[game_id] = GameInfo(
         id=game_id, name=name, real_time=real_time,
         max_players=max_players, factory=factory, serialize=serialize,
+        build_config=build_config,
     )
 
 

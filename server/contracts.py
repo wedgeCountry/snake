@@ -10,7 +10,7 @@ from games.engine import Action, Game, GameState
 
 ENVELOPE_VERSION = 1
 
-SESSION_COOKIE = "snake_session"
+SESSION_COOKIE = "game_session"
 
 
 class SessionService(Protocol):
@@ -67,6 +67,8 @@ class LeaderboardService(Protocol):
     def get_best(self, user_id: str, game_id: str, mode: str) -> int: ...
 
     def top(self, game_id: str, mode: str, limit: int = 10) -> list[dict]: ...
+
+    def bests(self, user_id: str) -> dict: ...  # {game_id: {mode: best}}
 
 
 class SettingsService(Protocol):
