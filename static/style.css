@@ -109,23 +109,49 @@ html, body {
 }
 .hidden { display: none !important; }
 
-/* Game picker (shell) */
-.game-picker {
-  position: fixed;
-  top: 48px;
-  left: 8px;
-  z-index: 10;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+/* Game select (first screen): full-screen menu with one card per game —
+   the only place a game is chosen; no in-game switching */
+.game-select {
+  position: fixed; inset: 0; z-index: 20;
+  display: none;
+  flex-direction: column; align-items: center; justify-content: center;
+  gap: 22px; padding: 20px;
+  background: rgba(8, 12, 28, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  text-align: center;
 }
-.game-picker button {
-  background: rgba(20, 28, 48, 0.85);
-  color: #cfe0ff;
+body.no-game .game-select { display: flex; }
+.game-select-title {
+  margin: 0;
+  font-size: clamp(30px, 8vw, 48px);
+  letter-spacing: 2px;
+  background: linear-gradient(90deg, #7dff9b, #4dd0ff);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.game-select-list {
+  display: flex; flex-direction: column; gap: 12px;
+  width: min(320px, 82vw);
+}
+.game-select-card {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 16px 20px;
+  border-radius: 14px;
   border: 1px solid #33456b;
-  border-radius: 8px;
-  padding: 6px 12px;
-  font-size: 13px;
+  background: rgba(20, 28, 48, 0.92);
+  color: #e8ecff;
+  font-size: 19px;
+  letter-spacing: .5px;
   cursor: pointer;
 }
-.game-picker button:hover { background: rgba(40, 55, 90, 0.9); }
+.game-select-card .meta { font-size: 12px; color: #8fa3d9; letter-spacing: .3px; }
+.game-select-card:hover, .game-select-card:focus-visible {
+  background: rgba(40, 55, 90, 0.95);
+  border-color: #4dd0ff66;
+  outline: none;
+}
+.game-select-error { margin: 0; color: #ff8ca3; font-size: 13px; max-width: 40ch; }
+
+/* No game selected yet: only the select menu (and the small picker) are visible */
+body.no-game .hud, body.no-game .legend, body.no-game .controls { display: none; }
+body.no-game #overlay { display: none; }

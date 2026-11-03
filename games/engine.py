@@ -9,9 +9,23 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any, Callable, Protocol, runtime_checkable
 
 Action = dict[str, Any]
+
+DEFAULT_STEP_TIME_MS = 260
+
+
+def default_build_config(user_settings: dict, mode: str, torus: bool) -> Any:
+    """Generic config for games that don't register their own builder: the
+    platform-wide step-time setting is honored, everything else is default."""
+    step = user_settings.get("stepTimeMs", DEFAULT_STEP_TIME_MS)
+    try:
+        step = int(step)
+    except (TypeError, ValueError):
+        step = DEFAULT_STEP_TIME_MS
+    return SimpleNamespace(step_time_ms=step, mode=mode, torus=torus)
 
 
 class GameState:
@@ -56,6 +70,10 @@ class GameInfo:
     max_players: int
     factory: Callable[[random.Random | None], Game] = field(repr=False)
     serialize: Callable[[GameState], dict] = field(repr=False)
+    # builds the game-specific config from per-user settings + new-game request;
+    # games with their own config dataclass register a builder here so the
+    # generic routes never import a concrete game
+    build_config: Callable[[dict, str, bool], Any] = field(default=default_build_config, repr=False)
 
 
 @dataclass(frozen=True)

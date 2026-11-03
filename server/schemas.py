@@ -6,7 +6,6 @@ DIRECTION_PATTERN = "^(left|right|up|down|forward|back)$"
 
 
 class NewGameRequest(BaseModel):
-    game_id: str = "snake"
     mode: str = "single"
     torus: bool = True
 

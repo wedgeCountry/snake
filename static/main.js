@@ -6,6 +6,7 @@
     vm: null,
     view: null,
     game: null,
+    overlayTap: null,
   };
 
   async function loadScript(src) {
@@ -20,13 +21,16 @@
 
   async function loadGameModule(gameId) {
     const base = '/static/games/' + gameId + '/';
+    // shared building blocks first (2D grid view base), then the game's own view
+    await loadScript('/static/games/common/grid2d.js');
     await loadScript(base + 'view.js');
-    // optional per-game modules; snake ships scene/hud/input, others may not
-    for (const src of ['scene.js', 'hud.js', 'input.js']) {
-      await fetch(base + src, { method: 'HEAD' }).then((r) => {
-        if (r.ok) return loadScript(base + src);
-      });
-    }
+    // optional per-game modules; snake ships scene/hud/input, others may not.
+    // They only reference each other at construction time, so they can load
+    // in parallel once view.js is in.
+    await Promise.all(['scene.js', 'hud.js', 'input.js'].map(async (src) => {
+      const r = await fetch(base + src, { method: 'HEAD' });
+      if (r.ok) await loadScript(base + src);
+    }));
   }
 
   function freshCanvas() {
@@ -38,9 +42,26 @@
     return canvas;
   }
 
+  function showGameSelect(errorMsg) {
+    document.body.classList.add('no-game');
+    document.getElementById('overlay').classList.add('hidden');
+    const err = document.getElementById('gameSelectError');
+    err.textContent = errorMsg || '';
+    err.style.display = errorMsg ? '' : 'none';
+  }
+
   async function startGame(game) {
     disposeGame();
     shell.game = game;
+    try {
+      await startGameInner(game);
+    } catch (e) {
+      // error boundary: a broken game module must not kill the shell
+      showGameSelect('Spiel "' + game.name + '" konnte nicht geladen werden: ' + e.message);
+    }
+  }
+
+  async function startGameInner(game) {
     await loadGameModule(game.id);
     const Ctor = window['GameView_' + game.id];
     if (!Ctor) throw new Error('no GameView for game: ' + game.id);
@@ -75,6 +96,7 @@
     }
 
     view.dom.overlay.addEventListener('pointerdown', startIfNeeded);
+    shell.overlayTap = startIfNeeded;
     view.dom.torusBtn.addEventListener('pointerdown', (e) => { e.stopPropagation(); vm.toggleTorus(); });
     view.dom.modeBtn.addEventListener('pointerdown', (e) => { e.stopPropagation(); vm.toggleMode(); });
     view.dom.speed.addEventListener('input', (e) => vm.setSpeed(parseInt(e.target.value, 10)));
@@ -88,7 +110,6 @@
         const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
         if (map[e.key]) { e.preventDefault(); vm.running ? vm.queueDirection(map[e.key]) : startIfNeeded(); }
       });
-      view.dom.overlay.addEventListener('pointerdown', startIfNeeded);
     }
 
     function frame(now) {
@@ -100,10 +121,17 @@
       await vm.init();
     } catch (e) {}
     view.updateHud(vm);
+    document.body.classList.remove('no-game');
+    // no running session yet: show the game's start screen
+    if (!vm.running) view.showOverlay(game.name, 'Bereit zum Spielen?', 'Tippen zum Starten');
     requestAnimationFrame(frame);
   }
 
   function disposeGame() {
+    if (shell.overlayTap) {
+      document.getElementById('overlay').removeEventListener('pointerdown', shell.overlayTap);
+      shell.overlayTap = null;
+    }
     if (shell.vm) shell.vm._stopTransport();
     if (shell.input && shell.input.dispose) shell.input.dispose();
     if (shell.view && shell.view.dispose) shell.view.dispose();
@@ -112,20 +140,36 @@
     shell.input = null;
   }
 
-  async function init() {
-    const games = await ApiClient.listGames();
-    const picker = document.getElementById('gamePicker');
-    picker.innerHTML = '';
-    for (const g of games) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.textContent = g.name;
-      btn.dataset.gameId = g.id;
-      btn.addEventListener('click', () => startGame(g));
-      picker.appendChild(btn);
-    }
-    if (games.length > 0) await startGame(games[0]);
+  function gameMeta(g) {
+    return (g.maxPlayers > 1 ? '1\u2013' + g.maxPlayers + ' Spieler' : '1 Spieler') +
+      (g.realTime ? ' \u00b7 Echtzeit' : '');
   }
 
+  async function init() {
+    const games = await ApiClient.listGames();
+    const list = document.getElementById('gameSelectList');
+    list.innerHTML = '';
+    for (const g of games) {
+      // the game-select menu is the only way to pick a game; there is no
+      // in-game switching
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'game-select-card';
+      card.dataset.gameId = g.id;
+      const label = document.createElement('span');
+      label.textContent = g.name;
+      const meta = document.createElement('span');
+      meta.className = 'meta';
+      meta.textContent = gameMeta(g);
+      card.appendChild(label);
+      card.appendChild(meta);
+      card.addEventListener('click', () => startGame(g));
+      list.appendChild(card);
+    }
+    // first step is always "select a game"; no game is auto-started
+    showGameSelect();
+  }
+
+  window.__shell = shell; // test hook: lets GUI tests inspect the active viewmodel
   init();
 })();

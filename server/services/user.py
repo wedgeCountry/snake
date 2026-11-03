@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import secrets
 
-COOKIE_NAME = "snake_uid"
+COOKIE_NAME = "game_uid"
 
 
 class CookieUserService:

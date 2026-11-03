@@ -26,7 +26,15 @@ smallest working example. Rules of the pipeline:
 
    register("tictactoe", name="Tic-Tac-Toe", real_time=False, max_players=2,
             factory=lambda rng: TttGame(rng=rng), serialize=serialize)
+   # optional: map per-user settings + new-game request to your config dataclass,
+   # so the generic routes never import your game (default honors stepTimeMs only)
+   # register(..., build_config=lambda settings, mode, torus: TttConfig(...))
    ```
+
+   Leaderboard, best-score and user identity are already generic: scores land on
+   the per-game leaderboard automatically when the session ends, and the caller's
+   cross-game profile is served at `GET /api/users/me/stats`; the envelope's
+   `meta.userBest` carries the player's own best for the current game/mode.
 
    ```python
    # games/tictactoe/core.py (sketch — the Game protocol is in games/engine.py)
@@ -46,7 +54,7 @@ smallest working example. Rules of the pipeline:
 2. **Register the package** in `games/__init__.py`: `from . import tictactoe`.
 3. **Frontend**: add `static/games/tictactoe/view.js` exposing
    `window.GameView_tictactoe` with `render(vm, now)`, `updateHud(vm)`,
-   `showOverlay(title, msg, cta)`, `dispose()`. It appears in the game picker
+   `showOverlay(title, msg, cta)`, `dispose()`. It appears in the game-select menu
    automatically via `GET /api/games`.
 4. **Tests**: add `tests/test_<id>.py`. The shared suite in `tests/contracts/`
    (state round-trip, seeded-RNG determinism, action validation, terminal

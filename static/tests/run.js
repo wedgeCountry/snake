@@ -71,6 +71,23 @@ function env(status, score) {
     'shell hides the "Tippen zum Starten" overlay once the game runs');
   assert(/let starting = false;[\s\S]*if \(starting \|\| vm\.running\) return;/.test(mainSrc),
     'startIfNeeded is re-entrancy guarded (pointerdown + touchend double fire)');
+  assert(!mainSrc.includes('startGame(games[0])'),
+    'shell does not auto-start a game; the first step is the game-select menu');
+  assert(!mainSrc.includes("getElementById('gamePicker')"),
+    'no in-game game picker: switching games is only possible on the select screen');
+  assert(mainSrc.includes('showGameSelect()'),
+    'shell shows the game-select menu before any game is chosen');
+  assert(mainSrc.includes("/static/games/common/grid2d.js"),
+    'shell loads the shared 2D grid view base before each game view');
+  const grid2dSrc = fs.readFileSync(path.join(__dirname, '..', 'games', 'common', 'grid2d.js'), 'utf8');
+  assert(grid2dSrc.includes('window.Grid2DView'), 'shared Grid2DView base exists');
+  for (const g of ['collector', 'territory', 'dungeon']) {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'games', g, 'view.js'), 'utf8');
+    assert(src.includes('extends window.Grid2DView'), g + ' view extends the shared Grid2DView');
+    assert(src.includes('drawEntities('), g + ' view implements drawEntities');
+  }
+  assert(mainSrc.includes('window.__shell = shell'),
+    'shell is exposed on window.__shell for GUI tests');
 
   // ViewModel consumes the versioned envelope and dispatches on gameId
   const game = { id: 'snake', name: '3D Snake', realTime: false, maxPlayers: 2 };
@@ -103,6 +120,17 @@ function env(status, score) {
   await v3.init();
   assert(subscribed, 'realTime game subscribes via transport');
   v3._stopTransport();
+
+  // A dead WebSocket while the game runs falls back to REST polling
+  const gameRT2 = { id: 'snake', name: '3D Snake', realTime: true, maxPlayers: 2 };
+  const apiRT2 = fakeApi({ state: env('running', 0), poll: [env('running', 1)] });
+  let fakeWs;
+  apiRT2.subscribe = () => { fakeWs = { close() {} }; return fakeWs; };
+  const v4 = new VM(apiRT2, gameRT2);
+  await v4.init();
+  fakeWs.onclose();
+  assert(v4._timer !== null && v4._timer !== undefined, 'ws close while running falls back to REST polling');
+  v4._stopTransport();
 
   if (failures) { console.error(failures + ' contract test(s) failed'); process.exit(1); }
   console.log('All JS contract tests passed');
