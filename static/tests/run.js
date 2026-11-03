@@ -110,6 +110,17 @@ function env(status, score) {
   assert(subscribed, 'realTime game subscribes via transport');
   v3._stopTransport();
 
+  // A dead WebSocket while the game runs falls back to REST polling
+  const gameRT2 = { id: 'snake', name: '3D Snake', realTime: true, maxPlayers: 2 };
+  const apiRT2 = fakeApi({ state: env('running', 0), poll: [env('running', 1)] });
+  let fakeWs;
+  apiRT2.subscribe = () => { fakeWs = { close() {} }; return fakeWs; };
+  const v4 = new VM(apiRT2, gameRT2);
+  await v4.init();
+  fakeWs.onclose();
+  assert(v4._timer !== null && v4._timer !== undefined, 'ws close while running falls back to REST polling');
+  v4._stopTransport();
+
   if (failures) { console.error(failures + ' contract test(s) failed'); process.exit(1); }
   console.log('All JS contract tests passed');
 })();

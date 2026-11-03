@@ -166,6 +166,16 @@ def test_gui_game_loop_starts_after_start(browser, server):
     page = _new_page(browser)
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
+    page.add_init_script(
+        "window.__wslog = [];"
+        "const O = window.WebSocket;"
+        "window.WebSocket = function(u, p) { const w = new O(u, p);"
+        "  w.addEventListener('open', () => window.__wslog.push('open'));"
+        "  w.addEventListener('close', (e) => window.__wslog.push('close:' + e.code));"
+        "  w.addEventListener('error', () => window.__wslog.push('error'));"
+        "  w.addEventListener('message', () => window.__wslog.push('msg'));"
+        "  return w; };"
+        "window.WebSocket.prototype = O.prototype;")
 
     page.goto(server + "/", wait_until="domcontentloaded")
     _select_snake_and_start(page)
@@ -187,7 +197,9 @@ def test_gui_game_loop_starts_after_start(browser, server):
             break
         time.sleep(0.25)
     assert head1 != head0, \
-        f"client game loop did not start: head stuck at {head0} for 15s"
+        f"client game loop did not start: head stuck at {head0} for 15s " \
+        f"(ws log: {page.evaluate('window.__wslog.slice(0, 8)')}, " \
+        f"polling fallback active: {page.evaluate('!!(window.__shell.vm && window.__shell.vm._timer)')})"
     assert page.evaluate("window.__shell.vm.state.status") == "running", \
         "game still running while the loop advances"
 

@@ -88,15 +88,24 @@ window.GameViewModel = class GameViewModel {
 
   _startTransport() {
     if (this.game.realTime && this.envelope && this.envelope.sessionId) {
-      this._ws = this.api.subscribe(this.gameId, this.envelope.sessionId,
-        (env) => this._onEnvelope(env));
-    } else {
-      this._startPolling();
+      try {
+        const ws = this.api.subscribe(this.gameId, this.envelope.sessionId,
+          (env) => this._onEnvelope(env));
+        // if the socket dies while the game is still running, fall back to
+        // REST polling so the loop keeps reaching the client
+        ws.onclose = () => {
+          if (this._ws === ws && this.running) this._startPolling();
+        };
+        ws.onerror = () => { try { ws.close(); } catch (e) {} };
+        this._ws = ws;
+        return;
+      } catch (e) { /* subscribe failed outright: poll instead */ }
     }
+    this._startPolling();
   }
 
   _stopTransport() {
-    if (this._ws) { try { this._ws.close(); } catch (e) {} this._ws = null; }
+    if (this._ws) { const ws = this._ws; this._ws = null; try { ws.close(); } catch (e) {} }
     if (this._timer) { clearTimeout(this._timer); this._timer = null; }
   }
 
