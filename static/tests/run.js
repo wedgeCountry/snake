@@ -77,6 +77,15 @@ function env(status, score) {
     'no in-game game picker: switching games is only possible on the select screen');
   assert(mainSrc.includes('showGameSelect()'),
     'shell shows the game-select menu before any game is chosen');
+  assert(mainSrc.includes("/static/games/common/grid2d.js"),
+    'shell loads the shared 2D grid view base before each game view');
+  const grid2dSrc = fs.readFileSync(path.join(__dirname, '..', 'games', 'common', 'grid2d.js'), 'utf8');
+  assert(grid2dSrc.includes('window.Grid2DView'), 'shared Grid2DView base exists');
+  for (const g of ['collector', 'territory', 'dungeon']) {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'games', g, 'view.js'), 'utf8');
+    assert(src.includes('extends window.Grid2DView'), g + ' view extends the shared Grid2DView');
+    assert(src.includes('drawEntities('), g + ' view implements drawEntities');
+  }
   assert(mainSrc.includes('window.__shell = shell'),
     'shell is exposed on window.__shell for GUI tests');
 

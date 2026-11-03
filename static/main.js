@@ -21,6 +21,8 @@
 
   async function loadGameModule(gameId) {
     const base = '/static/games/' + gameId + '/';
+    // shared building blocks first (2D grid view base), then the game's own view
+    await loadScript('/static/games/common/grid2d.js');
     await loadScript(base + 'view.js');
     // optional per-game modules; snake ships scene/hud/input, others may not.
     // They only reference each other at construction time, so they can load
