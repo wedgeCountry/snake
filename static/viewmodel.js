@@ -59,7 +59,8 @@ window.GameViewModel = class GameViewModel {
 
   queueDirection(name, player) {
     if (!this.running) return;
-    this.api.sendAction(this.gameId, player || 0, { direction: name });
+    // fire-and-forget: a 404 (e.g. session rotated while switching games) is harmless
+    Promise.resolve(this.api.sendAction(this.gameId, player || 0, { direction: name })).catch(() => {});
   }
 
   async toggleMode() {
