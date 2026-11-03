@@ -76,6 +76,16 @@ def test_generic_new_game_uses_registry_build_config(client):
     assert r.json()["state"]["gridSize"] == 9  # territory defaults, not snake's
 
 
+def test_collector_new_game_honors_step_time_setting(client):
+    """Collector must honor the platform step-time setting like the other
+    games, so the speed slider works for it too."""
+    client.post("/api/settings", json={"step_time_ms": 120})
+    r = client.post("/api/games/collector/new", json={"torus": True, "mode": "single"})
+    assert r.status_code == 200, r.text
+    assert r.json()["state"]["stepTimeMs"] == 120
+    assert r.json()["state"]["gridSize"] == 8  # collector defaults, not snake's
+
+
 def test_snake_build_config_maps_settings_and_request():
     info = get_game_info("snake")
     cfg = info.build_config({"stepTimeMs": 150}, "multi", False)

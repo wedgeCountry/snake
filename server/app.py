@@ -180,6 +180,7 @@ def api_action(
 def api_settings(
     req: SettingsRequest,
     request: Request,
+    sessions: SessionService = Depends(get_session_service),
     settings: SettingsService = Depends(get_settings_service),
     user: UserService = Depends(get_user_service),
 ) -> JSONResponse:
@@ -187,6 +188,15 @@ def api_settings(
     patch: dict = {}
     if req.step_time_ms is not None:
         patch["stepTimeMs"] = settings.set_step_time_ms(user_id, req.step_time_ms)
+        # apply live to the active session: the loop and the WS transport
+        # re-read state.step_time_ms on every tick, so the speed slider
+        # takes effect immediately instead of only on the next new game
+        session_id = request.cookies.get(SESSION_COOKIE)
+        session = sessions.get(session_id) if session_id else None
+        if session is not None:
+            state = session.game.state()
+            if hasattr(state, "step_time_ms"):
+                state.step_time_ms = patch["stepTimeMs"]
     if req.torus is not None:
         patch["torus"] = settings.set_torus(user_id, req.torus)
     body = patch or {"stepTimeMs": settings.get_step_time_ms(user_id), "torus": settings.get_torus(user_id)}

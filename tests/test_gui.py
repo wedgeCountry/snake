@@ -155,6 +155,39 @@ def test_gui_select_snake_start_press_each_button(browser, server):
     page.context.close()
 
 
+def test_gui_grid_game_view_fills_screen_with_speed_control(browser, server):
+    """Non-snake grid games must render as a proper full-screen game view (not
+    a small panel in the top-left corner) and expose the speed slider."""
+    page = _new_page(browser)
+    errors = []
+    page.on("pageerror", lambda e: errors.append(str(e)))
+
+    page.goto(server + "/", wait_until="domcontentloaded")
+    page.wait_for_selector('#gameSelectList button[data-game-id="collector"]', timeout=10000)
+    page.click('#gameSelectList button[data-game-id="collector"]')
+    page.wait_for_function(
+        "!document.getElementById('overlay').classList.contains('hidden') && "
+        "document.getElementById('ovTitle').textContent.trim() === 'Collector'",
+        timeout=10000, polling=250)
+
+    # the canvas element covers the whole viewport, not a 300x150 corner panel
+    box = page.locator("#scene").bounding_box()
+    inner_w = page.evaluate("window.innerWidth")
+    inner_h = page.evaluate("window.innerHeight")
+    assert box["x"] == 0 and box["y"] == 0, f"canvas not at viewport origin: {box}"
+    assert box["width"] == inner_w and box["height"] == inner_h, \
+        f"canvas does not fill the viewport: {box} vs {inner_w}x{inner_h}"
+    # the drawing buffer is matched to the viewport (dpr = 1 in headless)
+    assert page.evaluate("document.getElementById('scene').width") == inner_w
+    assert page.evaluate("document.getElementById('scene').height") == inner_h
+    # speed control is visible for the 2D game too
+    assert page.locator("#controls .speed input#speed").is_visible(), \
+        "speed slider is visible for grid games"
+
+    assert errors == [], f"page errors during grid-view test: {errors}"
+    page.context.close()
+
+
 def test_gui_game_loop_starts_after_start(browser, server):
     """After selecting snake and tapping start, the game loop must actually run:
     the client viewmodel receives advancing state (via WebSocket) and the

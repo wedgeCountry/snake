@@ -11,7 +11,9 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 
-#scene { position: fixed; inset: 0; display: block; }
+/* full-viewport game surface: 3D views set an inline size via the renderer,
+   2D views rely on this so the canvas is not stuck at its intrinsic 300x150 */
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 
 .hud {
   position: fixed;
