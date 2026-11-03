@@ -1,6 +1,8 @@
-"""Dungeon core — a pure single-player RPG: guide a hero through a grid
-dungeon, fight monsters, grab potions, level up, and slay the boss in the far
-corner. Zero I/O, injectable RNG. Implements the pipeline Game protocol."""
+"""Dungeon core — a pure single-player RPG: guide a hero (weapon, traits,
+levels) through a grid dungeon, fight monsters (weapons, traits, levels,
+skills) in round-based combat, grab potions and dropped weapons, level up,
+and slay the boss in the far corner. Zero I/O, injectable RNG. Implements
+the pipeline Game protocol."""
 
 from __future__ import annotations
 
@@ -11,7 +13,10 @@ from ..common.direction import Direction, DirectionQueue
 from ..common.grid_move import clamp2d
 from ..common.spawner import WeightedSpawner
 from ..engine import GameState
+from .combat import make_hero, make_monster, random_trait, resolve_encounter
 from .config import DungeonConfig
+
+COMBAT_LOG_LINES = 6
 
 
 class DungeonState(GameState):
@@ -19,16 +24,18 @@ class DungeonState(GameState):
 
     def __init__(self, grid_size: int, hero: dict, monsters: list[dict],
                  potions: list[tuple[int, int]], score: int, turn: int, max_turns: int,
-                 status: str = "running", step_time_ms: int = 300) -> None:
+                 status: str = "running", step_time_ms: int = 300,
+                 combat_log: list[str] | None = None) -> None:
         self.grid_size = grid_size
-        self.hero = hero  # {x, y, hp, max_hp, dmg, level, xp, gold}
-        self.monsters = monsters  # [{x, y, hp, kind}]
+        self.hero = hero  # {name, x, y, hp, max_hp, dmg, level, xp, gold, weapon, traits, skills}
+        self.monsters = monsters  # [{name, x, y, hp, max_hp, dmg, level, kind, weapon, traits, skills}]
         self.potions = list(potions)
         self.score = score
         self.turn = turn
         self.max_turns = max_turns
         self.status = status
         self.step_time_ms = step_time_ms
+        self.combat_log = combat_log or []
 
 
 class DungeonGame:
@@ -52,9 +59,8 @@ class DungeonGame:
             step = getattr(config, "step_time_ms", None)
             cfg = DungeonConfig(step_time_ms=step) if isinstance(step, int) else self._config
         n = cfg.grid_size
-        hero = {"x": 0, "y": 0, "hp": cfg.hero_hp, "max_hp": cfg.hero_hp,
-                "dmg": cfg.hero_dmg, "level": 1, "xp": 0, "gold": 0}
-        boss = {"x": n - 1, "y": n - 1, "hp": cfg.boss_hp, "kind": "boss"}
+        hero = make_hero(cfg)
+        boss = make_monster(self._rng, n - 1, n - 1, cfg, kind="boss")
         self._state = DungeonState(n, hero, [boss], [], 0, 0, cfg.max_turns,
                                    step_time_ms=cfg.step_time_ms)
         self._config = cfg
@@ -94,12 +100,7 @@ class DungeonGame:
         self._combat(state, cfg)
         self._loot(state, cfg)
         self._maybe_spawn(state, cfg)
-        while hero["xp"] >= cfg.xp_level_up and state.status == "running":
-            hero["xp"] -= cfg.xp_level_up
-            hero["level"] += 1
-            hero["dmg"] += 2
-            hero["max_hp"] += 6
-            hero["hp"] = hero["max_hp"]
+        self._level_up(state, cfg)
         state.score = hero["xp"] + 2 * hero["gold"]
         if hero["hp"] <= 0:
             state.status = "dead"
@@ -113,7 +114,7 @@ class DungeonGame:
         monster = next((m for m in state.monsters if (m["x"], m["y"]) == cell), None)
         if monster is None:
             return
-        monster["hp"] -= hero["dmg"]
+        log = resolve_encounter(self._rng, hero, monster, cfg)
         if monster["hp"] <= 0:
             state.monsters.remove(monster)
             if monster["kind"] == "boss":
@@ -122,8 +123,15 @@ class DungeonGame:
             else:
                 hero["xp"] += cfg.xp_per_kill
                 hero["gold"] += 5
-        else:
-            hero["hp"] -= cfg.boss_dmg if monster["kind"] == "boss" else cfg.monster_dmg
+            self._maybe_take_weapon(hero, monster, cfg, log)
+        state.combat_log = log[-COMBAT_LOG_LINES:]
+
+    def _maybe_take_weapon(self, hero: dict, monster: dict, cfg: DungeonConfig, log: list[str]) -> None:
+        drop = monster.get("weapon") or {}
+        current = hero.get("weapon") or {}
+        if self._rng.random() < cfg.weapon_drop_chance and drop.get("dmg", 0) > current.get("dmg", 0):
+            hero["weapon"] = dict(drop)
+            log.append(f"{hero['name']} takes the {drop['name']}!")
 
     def _loot(self, state: DungeonState, cfg: DungeonConfig) -> None:
         hero = state.hero
@@ -131,6 +139,19 @@ class DungeonGame:
         if cell in state.potions:
             state.potions.remove(cell)
             hero["hp"] = min(hero["max_hp"], hero["hp"] + cfg.potion_heal)
+
+    def _level_up(self, state: DungeonState, cfg: DungeonConfig) -> None:
+        hero = state.hero
+        while hero["xp"] >= cfg.xp_level_up and state.status == "running":
+            hero["xp"] -= cfg.xp_level_up
+            hero["level"] += 1
+            hero["dmg"] += 2
+            hero["max_hp"] += 6
+            trait = random_trait(self._rng, [t.get("key", t["name"]) for t in hero["traits"]], cfg)
+            if trait is not None:
+                hero["traits"].append(trait)
+                hero["max_hp"] += trait.get("max_hp", 0)
+            hero["hp"] = hero["max_hp"]
 
     def _maybe_spawn(self, state: DungeonState, cfg: DungeonConfig) -> None:
         if self._rng.random() >= cfg.spawn_chance:
@@ -147,6 +168,7 @@ class DungeonGame:
             return
         cell, kind = spawned
         if kind == "monster":
-            state.monsters.append({"x": cell[0], "y": cell[1], "hp": cfg.monster_hp, "kind": "monster"})
+            level = 1 + min(2, state.turn // 60)  # monsters scale with dungeon depth (turns)
+            state.monsters.append(make_monster(self._rng, cell[0], cell[1], cfg, kind="monster", level=level))
         else:
             state.potions.append(cell)
