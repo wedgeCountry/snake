@@ -12,7 +12,6 @@ Run with:
     python -m pytest tests/test_gui.py -q
 """
 
-import json
 import socket
 import subprocess
 import sys
@@ -77,9 +76,11 @@ def _text(pg, selector):
 
 def _dismiss_overlay_if_shown(pg):
     # a finished game shows the overlay on top of the picker/header; tapping
-    # it restarts, so the buttons underneath stay reachable
+    # it restarts, so the buttons underneath stay reachable. dispatch pointerdown
+    # directly (that is what the app listens to) to avoid click actionability
+    # races with the overlay appearing/disappearing mid-test
     if "hidden" not in (pg.locator("#overlay").get_attribute("class") or ""):
-        pg.click("#overlay")
+        pg.locator("#overlay").dispatch_event("pointerdown")
         pg.wait_for_selector("#overlay.hidden", state="attached", timeout=10000)
 
 
@@ -90,8 +91,8 @@ def _select_snake_and_start(pg):
     pg.wait_for_function(
         "!document.getElementById('overlay').classList.contains('hidden') && "
         "document.getElementById('ovTitle').textContent.trim() === '3D Snake'",
-        timeout=10000)
-    pg.click("#overlay")
+        timeout=10000, polling=250)
+    pg.locator("#overlay").dispatch_event("pointerdown")
     pg.wait_for_selector("#overlay.hidden", state="attached", timeout=10000)
 
 
@@ -118,14 +119,14 @@ def test_gui_select_snake_start_press_each_button(browser, server):
     page.evaluate("window.__cv = document.getElementById('scene')")
     page.click('#gameSelectList button[data-game-id="snake"]')
     page.wait_for_function(
-        "window.__cv !== document.getElementById('scene')", timeout=10000)
+        "window.__cv !== document.getElementById('scene')", timeout=10000, polling=250)
     page.wait_for_function(
         "!document.getElementById('overlay').classList.contains('hidden') && "
         "document.getElementById('ovTitle').textContent.trim() === '3D Snake'",
-        timeout=10000)
+        timeout=10000, polling=250)
 
     # 3. tap the start screen -> the game loop starts, overlay hides
-    page.click("#overlay")
+    page.locator("#overlay").dispatch_event("pointerdown")
     page.wait_for_selector("#overlay.hidden", state="attached", timeout=10000)
 
     # 4. press each button on the page once after the other; after each press
@@ -145,13 +146,13 @@ def test_gui_select_snake_start_press_each_button(browser, server):
             page.evaluate("window.__cv = document.getElementById('scene')")
             page.locator(selector).dispatch_event("click")
             page.wait_for_function(
-                "window.__cv !== document.getElementById('scene')", timeout=10000)
+                "window.__cv !== document.getElementById('scene')", timeout=10000, polling=250)
         else:
             el, expected = label
             page.locator(selector).dispatch_event("pointerdown")
             page.wait_for_function(
                 f"document.getElementById('{el}').textContent.trim() === '{expected}'",
-                timeout=10000)
+                timeout=10000, polling=250)
 
     assert _text(page, "#score").isdigit(), "snake HUD shows a numeric score"
     assert errors == [], f"page errors during GUI test: {errors}"
@@ -174,12 +175,19 @@ def test_gui_game_loop_starts_after_start(browser, server):
         "viewmodel reports running after tapping start"
     page.wait_for_function(
         "!!(window.__shell.vm.state && window.__shell.vm.state.snake && window.__shell.vm.state.snake[0])",
-        timeout=10000)
+        timeout=10000, polling=250)
     head0 = page.evaluate("JSON.stringify(window.__shell.vm.state.snake[0])")
-    # the loop ticks every ~260ms; the head must move within a few seconds
-    page.wait_for_function(
-        f"JSON.stringify(window.__shell.vm.state.snake[0]) !== {json.dumps(head0)}",
-        timeout=15000)
+    # the loop ticks every ~260ms; the head must move within a few seconds.
+    # poll from Python (not rAF) so the check also works where rAF is throttled
+    deadline = time.time() + 15
+    head1 = head0
+    while time.time() < deadline:
+        head1 = page.evaluate("JSON.stringify(window.__shell.vm.state.snake[0])")
+        if head1 != head0:
+            break
+        time.sleep(0.25)
+    assert head1 != head0, \
+        f"client game loop did not start: head stuck at {head0} for 15s"
     assert page.evaluate("window.__shell.vm.state.status") == "running", \
         "game still running while the loop advances"
 
