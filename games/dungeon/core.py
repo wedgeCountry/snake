@@ -7,14 +7,11 @@ from __future__ import annotations
 import random
 from typing import Any
 
+from ..common.direction import Direction, DirectionQueue
+from ..common.grid_move import clamp2d
+from ..common.spawner import WeightedSpawner
 from ..engine import GameState
 from .config import DungeonConfig
-
-_DIRS = {
-    "left": (-1, 0), "right": (1, 0),
-    "up": (0, -1), "down": (0, 1),
-    "forward": (0, 1), "back": (0, -1),
-}
 
 
 class DungeonState(GameState):
@@ -40,7 +37,9 @@ class DungeonGame:
         self._rng = rng or random.Random()
         self._config = config or DungeonConfig()
         self._state: DungeonState | None = None
-        self._pending: tuple[int, int] | None = None
+        self._queue = DirectionQueue()
+        self._last = Direction(1, 0, 0)
+        self._spawner = WeightedSpawner(self._rng, [("monster", 70), ("potion", 30)])
 
     @property
     def state_schema_version(self) -> int:
@@ -59,7 +58,8 @@ class DungeonGame:
         self._state = DungeonState(n, hero, [boss], [], 0, 0, cfg.max_turns,
                                    step_time_ms=cfg.step_time_ms)
         self._config = cfg
-        self._pending = None
+        self._queue.clear()
+        self._last = Direction(1, 0, 0)
         return self._state
 
     def state(self) -> DungeonState:
@@ -76,10 +76,8 @@ class DungeonGame:
     def apply_action(self, player: int, action: dict[str, Any]) -> None:
         if player != 0:
             raise ValueError("dungeon is single-player")
-        name = str(action["direction"])
-        if name not in _DIRS:
-            raise ValueError(f"unknown direction: {name}")
-        self._pending = _DIRS[name]
+        direction = Direction.from_name_2d(str(action["direction"]))
+        self._queue.push(direction, self._last)
 
     def tick(self) -> DungeonState:
         state = self.state()
@@ -88,11 +86,11 @@ class DungeonGame:
         cfg = self._config
         state.turn += 1
         n = state.grid_size
-        d = self._pending or (1, 0)
-        self._pending = None
+        d = self._queue.pop() or self._last
+        self._last = d
+        dx, dy = d.as_2d()
         hero = state.hero
-        hero["x"] = min(max(hero["x"] + d[0], 0), n - 1)
-        hero["y"] = min(max(hero["y"] + d[1], 0), n - 1)
+        hero["x"], hero["y"] = clamp2d(hero["x"] + dx, hero["y"] + dy, n)
         self._combat(state, cfg)
         self._loot(state, cfg)
         self._maybe_spawn(state, cfg)
@@ -144,8 +142,10 @@ class DungeonGame:
         free = sorted((x, y) for x in range(n) for y in range(n) if (x, y) not in occupied)
         if not free:
             return
-        cell = self._rng.choice(free)
-        kind = self._rng.choices(["monster", "potion"], weights=[70, 30], k=1)[0]
+        spawned = self._spawner.spawn(free)
+        if spawned is None:
+            return
+        cell, kind = spawned
         if kind == "monster":
             state.monsters.append({"x": cell[0], "y": cell[1], "hp": cfg.monster_hp, "kind": "monster"})
         else:

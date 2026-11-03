@@ -8,14 +8,10 @@ from __future__ import annotations
 import random
 from typing import Any
 
+from ..common.direction import Direction, DirectionQueue
+from ..common.grid_move import clamp2d
 from ..engine import GameState
 from .config import TerritoryConfig
-
-_DIRS = {
-    "left": (-1, 0), "right": (1, 0),
-    "up": (0, -1), "down": (0, 1),
-    "forward": (0, 1), "back": (0, -1),
-}
 
 
 class TerritoryState(GameState):
@@ -44,7 +40,8 @@ class TerritoryGame:
         self._rng = rng or random.Random()
         self._config = config or TerritoryConfig()
         self._state: TerritoryState | None = None
-        self._pending: tuple[int, int] | None = None
+        self._queue = DirectionQueue()
+        self._last = Direction(1, 0, 0)  # default drift direction (right)
 
     @property
     def state_schema_version(self) -> int:
@@ -65,7 +62,8 @@ class TerritoryGame:
                                      cfg.max_turns, cfg.territory_goal,
                                      step_time_ms=cfg.step_time_ms)
         self._config = cfg
-        self._pending = None
+        self._queue.clear()
+        self._last = Direction(1, 0, 0)
         return self._state
 
     def state(self) -> TerritoryState:
@@ -82,10 +80,8 @@ class TerritoryGame:
     def apply_action(self, player: int, action: dict[str, Any]) -> None:
         if player != 0:
             raise ValueError("territory is single-player")
-        name = str(action["direction"])
-        if name not in _DIRS:
-            raise ValueError(f"unknown direction: {name}")
-        self._pending = _DIRS[name]
+        direction = Direction.from_name_2d(str(action["direction"]))
+        self._queue.push(direction, self._last)
 
     def tick(self) -> TerritoryState:
         state = self.state()
@@ -94,14 +90,13 @@ class TerritoryGame:
         cfg = self._config
         state.turn += 1
         n = state.grid_size
-        d = self._pending or (1, 0)
-        self._pending = None
-        nx = min(max(state.pos[0] + d[0], 0), n - 1)
-        ny = min(max(state.pos[1] + d[1], 0), n - 1)
-        state.pos = (nx, ny)
+        d = self._queue.pop() or self._last
+        self._last = d
+        dx, dy = d.as_2d()
+        state.pos = clamp2d(state.pos[0] + dx, state.pos[1] + dy, n)
         # claiming by the settler only works on a free cell next to the territory
-        if (nx, ny) not in state.territory and self._adjacent(state.territory, (nx, ny), n):
-            state.territory.add((nx, ny))
+        if state.pos not in state.territory and self._adjacent(state.territory, state.pos, n):
+            state.territory.add(state.pos)
         # the realm also grows on its own: one random frontier cell per turn
         frontier = self._frontier(state, n)
         if frontier:

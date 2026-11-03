@@ -35,10 +35,17 @@ def test_settler_cannot_claim_non_adjacent_cell():
     g = _game()
     s = g.state()
     s.pos = (0, 0)  # far away from the center territory
-    g.apply_action(0, {"direction": "left"})  # clamped at the border
+    g.apply_action(0, {"direction": "up"})  # clamped at the border
     g.tick()
     assert g.state().pos == (0, 0)
     assert (0, 0) not in g.state().territory  # not adjacent -> not claimed
+
+
+def test_opposite_turn_is_rejected_by_shared_queue():
+    g = _game()
+    g.apply_action(0, {"direction": "left"})  # 180-degree turn vs default right
+    g.tick()
+    assert g.state().pos == (5, 4)  # still drifting right
 
 
 def test_territory_grows_and_score_rises():

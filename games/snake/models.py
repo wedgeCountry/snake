@@ -6,6 +6,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from ..common.direction import Direction  # re-exported: shared with all grid games
+
+__all__ = ["Direction", "FruitKind", "Cell", "Fruit", "SnakeState", "GameSinglePlayerState"]
+
 
 class FruitKind(str, Enum):
     APPLE = "apple"              # classic: grow + score
@@ -13,30 +17,6 @@ class FruitKind(str, Enum):
     GROW_GRID = "grow_grid"      # expand the grid by 2 per axis
     SHRINK_GRID = "shrink_grid"  # shrink the grid by 2 per axis
     STAR = "star"                # indestructible for a while (can pass through itself)
-
-
-@dataclass(frozen=True)
-class Direction:
-    x: int
-    y: int
-    z: int
-
-    @classmethod
-    def from_name(cls, name: str) -> "Direction":
-        mapping = {
-            "left": cls(-1, 0, 0),
-            "right": cls(1, 0, 0),
-            "up": cls(0, 1, 0),
-            "down": cls(0, -1, 0),
-            "forward": cls(0, 0, 1),
-            "back": cls(0, 0, -1),
-        }
-        if name not in mapping:
-            raise ValueError(f"unknown direction: {name}")
-        return mapping[name]
-
-    def is_opposite(self, other: "Direction") -> bool:
-        return (self.x, self.y, self.z) == (-other.x, -other.y, -other.z)
 
 
 @dataclass(frozen=True)

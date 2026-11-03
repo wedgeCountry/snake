@@ -8,7 +8,10 @@ from __future__ import annotations
 import random
 from typing import Any
 
-from ..common.board import free_cells, weighted_choice
+from ..common.board import free_cells
+from ..common.direction import Direction, DirectionQueue
+from ..common.grid_move import candidate_head
+from ..common.spawner import WeightedSpawner, should_despawn
 from ..engine import Game, GameState
 from .config import (
     DEFAULT_STEP_MS,
@@ -17,7 +20,7 @@ from .config import (
     SnakeConfig,
 )
 from .effects import build_effects
-from .models import Cell, Direction, Fruit, FruitKind, SnakeState
+from .models import Cell, Fruit, FruitKind, SnakeState
 
 
 def _spawn_snake(n: int, head: Cell, direction: Direction) -> list[Cell]:
@@ -34,8 +37,12 @@ class SnakeGame:
         self._rng = rng or random.Random()
         self._config = config or SnakeConfig()
         self._effects = build_effects()
+        self._spawner = self._make_spawner(self._config)
         self._state: SnakeState | None = None
-        self._dir_queues: list[list[Direction]] = []
+        self._dir_queues: list[DirectionQueue] = []
+
+    def _make_spawner(self, cfg: SnakeConfig) -> WeightedSpawner:
+        return WeightedSpawner(self._rng, [(k.value, w) for k, w in cfg.fruit_weights])
 
     @property
     def rng(self) -> random.Random:
@@ -64,7 +71,8 @@ class SnakeGame:
             snakes = [_spawn_snake(n, Cell(3, mid, mid + 1), Direction(1, 0, 0))]
             directions = [Direction(1, 0, 0)]
             scores = [0]
-        self._dir_queues = [[] for _ in snakes]
+        self._dir_queues = [DirectionQueue() for _ in snakes]
+        self._spawner = self._make_spawner(cfg)
         state = SnakeState(
             grid_size=n,
             snake=snakes[0],
@@ -103,11 +111,8 @@ class SnakeGame:
         if not (0 <= player < state.num_players):
             return
         queue = self._dir_queues[player]
-        last = queue[-1] if queue else state.directions[player]
-        if direction == last or direction.is_opposite(last):
-            return
-        if len(queue) < 4:
-            queue.append(direction)
+        last = queue.peek_last() or state.directions[player]
+        queue.push(direction, last)
 
     def clear_queue(self, player: int) -> None:
         if 0 <= player < len(self._dir_queues):
@@ -128,15 +133,13 @@ class SnakeGame:
         for i, snake in enumerate(state.snakes):
             head = snake[0]
             d = state.directions[i]
-            nx, ny, nz = head.x + d.x, head.y + d.y, head.z + d.z
-            if state.torus:
-                nx, ny, nz = nx % n, ny % n, nz % n
-            elif not (0 <= nx < n and 0 <= ny < n and 0 <= nz < n):
+            cand = candidate_head((head.x, head.y, head.z), d, n, state.torus)
+            if cand is None:
                 new_heads.append(None)
                 dead.append(i)
                 eaten.append(None)
                 continue
-            new_head = Cell(nx, ny, nz)
+            new_head = Cell(*cand)
             is_eating = new_head == state.food.cell
             starred = state.star_steps[i] > 0
             body = snake if (is_eating or starred) else snake[:-1]
@@ -180,21 +183,20 @@ class SnakeGame:
         return state
 
     def _drain_direction(self, state: SnakeState, player: int) -> None:
-        if self._dir_queues[player]:
-            state.directions[player] = self._dir_queues[player].pop(0)
+        nxt = self._dir_queues[player].pop()
+        if nxt is not None:
+            state.directions[player] = nxt
 
     def _age_fruit(self, state: SnakeState) -> None:
         """Timed fruit kinds despawn after their duration and respawn."""
-        duration_s = self._config.fruit_durations_s.get(state.food.kind)
-        if duration_s is None:
-            return
+        if should_despawn(state.fruit_age_ms, state.food.kind.value,
+                          self._config.fruit_durations_s, state.step_time_ms):
+            free = self.free_cells(state)
+            if free:
+                state.food = self._spawn_fruit(state)
+                state.fruit_age_ms = 0
+                return
         state.fruit_age_ms += state.step_time_ms
-        if state.fruit_age_ms < duration_s * 1000:
-            return
-        free = self.free_cells(state)
-        if free:
-            state.food = self._spawn_fruit(state)
-            state.fruit_age_ms = 0
 
     def set_torus(self, enabled: bool) -> SnakeState:
         state = self.state()
@@ -209,8 +211,9 @@ class SnakeGame:
 
     def _spawn_fruit(self, state: SnakeState) -> Fruit:
         free = self.free_cells(state)
-        if not free:
+        spawned = self._spawner.spawn(free)
+        if spawned is None:
             return state.food
-        cell = self._rng.choice(free)
-        kind = FruitKind(weighted_choice(self._rng, [(k.value, w) for k, w in self._config.fruit_weights]))
-        return Fruit(cell, kind)
+        cell, kind = spawned
+        cell = cell if isinstance(cell, Cell) else Cell(*cell)
+        return Fruit(cell, FruitKind(kind))
