@@ -45,6 +45,9 @@ uvicorn server.app:app --reload
 
 Dann http://localhost:8000 öffnen.
 
+Fuer die GUI-Tests zusaetzlich die Playwright-Dependencies installieren,
+siehe "Tests" unten.
+
 ## Tests
 
 ```bash
@@ -52,12 +55,31 @@ python -m pytest tests/ -q   # inkl. tests/contracts/
 node static/tests/run.js     # JS GameView Contract-Tests
 ```
 
-GUI-Test (headless Chromium via Playwright: waehlt zuerst Snake im Game-Picker,
-klickt dann den Start-Screen und drueckt danach jede Schaltflaeche einmal der
-Reihe nach):
+### GUI-Tests (headless Chromium via Playwright)
+
+Minimal-Setup (einmalig, als Skript kopierbar):
 
 ```bash
+#!/usr/bin/env bash
+# setup-gui-tests.sh — installiert alles fuer die headless GUI-Tests
+set -e
 pip install -r requirements.txt -r requirements-gui.txt
-python -m playwright install chromium
+# Systembibliotheken des Browsers; --with-deps benoetigt root/sudo:
+sudo python -m playwright install --with-deps chromium
+# ohne root stattdessen nur das Paket holen und die Systemlibs separat
+# installieren (z. B. apt-get install libnss3 libatk1.0-0 libatk-bridge2.0-0
+# libcups2 libdrm2 libxkbcommon0 libgbm1 libasound2):
+#   python -m playwright install chromium
+```
+
+Ausfuehren:
+
+```bash
 python -m pytest tests/test_gui.py -q
 ```
+
+Die GUI-Tests starten den echten Server (uvicorn auf einem freien Port) und
+driven das Frontend in headless Chromium: erstes Screen ist das Game-Select-Menue,
+dort wird Snake gewaehlt, der Start-Screen getappt — und `test_gui_game_loop_starts_after_start`
+prueft, dass die Spielschleife wirklich anlaeuft (Schlangenkopf bewegt sich im
+Client-State via WebSocket/REST-Fallback und serverseitig via REST).
