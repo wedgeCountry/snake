@@ -40,16 +40,12 @@
     return canvas;
   }
 
-  function showOverlayText(title, msg, cta) {
-    document.getElementById('ovTitle').textContent = title;
-    document.getElementById('ovMsg').textContent = msg;
-    document.getElementById('ovCta').textContent = cta;
-    document.getElementById('overlay').classList.remove('hidden');
-  }
-
-  function showPickerPrompt() {
+  function showGameSelect(errorMsg) {
     document.body.classList.add('no-game');
-    showOverlayText('Spiel w\u00e4hlen', 'W\u00e4hle ein Spiel aus der Liste.', '');
+    document.getElementById('overlay').classList.add('hidden');
+    const err = document.getElementById('gameSelectError');
+    err.textContent = errorMsg || '';
+    err.style.display = errorMsg ? '' : 'none';
   }
 
   async function startGame(game) {
@@ -59,8 +55,7 @@
       await startGameInner(game);
     } catch (e) {
       // error boundary: a broken game module must not kill the shell
-      document.body.classList.add('no-game');
-      showOverlayText(game.name, 'Spiel konnte nicht geladen werden: ' + e.message, '');
+      showGameSelect('Spiel "' + game.name + '" konnte nicht geladen werden: ' + e.message);
     }
   }
 
@@ -143,10 +138,17 @@
     shell.input = null;
   }
 
+  function gameMeta(g) {
+    return (g.maxPlayers > 1 ? '1\u2013' + g.maxPlayers + ' Spieler' : '1 Spieler') +
+      (g.realTime ? ' \u00b7 Echtzeit' : '');
+  }
+
   async function init() {
     const games = await ApiClient.listGames();
     const picker = document.getElementById('gamePicker');
+    const list = document.getElementById('gameSelectList');
     picker.innerHTML = '';
+    list.innerHTML = '';
     for (const g of games) {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -154,10 +156,25 @@
       btn.dataset.gameId = g.id;
       btn.addEventListener('click', () => startGame(g));
       picker.appendChild(btn);
+
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'game-select-card';
+      card.dataset.gameId = g.id;
+      const label = document.createElement('span');
+      label.textContent = g.name;
+      const meta = document.createElement('span');
+      meta.className = 'meta';
+      meta.textContent = gameMeta(g);
+      card.appendChild(label);
+      card.appendChild(meta);
+      card.addEventListener('click', () => startGame(g));
+      list.appendChild(card);
     }
     // first step is always "select a game"; no game is auto-started
-    showPickerPrompt();
+    showGameSelect();
   }
 
+  window.__shell = shell; // test hook: lets GUI tests inspect the active viewmodel
   init();
 })();

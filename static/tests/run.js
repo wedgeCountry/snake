@@ -73,8 +73,10 @@ function env(status, score) {
     'startIfNeeded is re-entrancy guarded (pointerdown + touchend double fire)');
   assert(!mainSrc.includes('startGame(games[0])'),
     'shell does not auto-start a game; the first step is the game picker');
-  assert(mainSrc.includes('showPickerPrompt()'),
-    'shell shows the select-a-game prompt before any game is chosen');
+  assert(mainSrc.includes('showGameSelect()'),
+    'shell shows the game-select menu before any game is chosen');
+  assert(mainSrc.includes('window.__shell = shell'),
+    'shell is exposed on window.__shell for GUI tests');
 
   // ViewModel consumes the versioned envelope and dispatches on gameId
   const game = { id: 'snake', name: '3D Snake', realTime: false, maxPlayers: 2 };
