@@ -27,6 +27,19 @@
         height: document.getElementById('height'),
         star: document.getElementById('star'),
       };
+      // keep the drawing buffer matched to the full-viewport canvas (the CSS
+      // stretches the element to 100%; the buffer must match to stay sharp)
+      this._onResize = () => this.resize();
+      window.addEventListener('resize', this._onResize);
+      this.resize();
+    }
+
+    resize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = this.canvas.clientWidth || window.innerWidth;
+      const h = this.canvas.clientHeight || window.innerHeight;
+      this.canvas.width = Math.max(1, Math.round(w * dpr));
+      this.canvas.height = Math.max(1, Math.round(h * dpr));
     }
 
     // no-op camera controls so the shared SnakeInput gestures don't throw
@@ -48,6 +61,9 @@
       if (!s) return;
       this.dom.score.textContent = s.score;
       this.dom.best.textContent = (vm.meta && vm.meta.best) || 0;
+      if (this.dom.speed && document.activeElement !== this.dom.speed) {
+        this.dom.speed.value = (vm.meta && vm.meta.stepTimeMs) || s.stepTimeMs || 260;
+      }
       if (this.hudExtra) this.hudExtra(vm);
     }
 
@@ -79,6 +95,8 @@
     /* subclasses override: draw game entities for state s */
     drawEntities(ctx, s, geom) {}
 
-    dispose() {}
+    dispose() {
+      window.removeEventListener('resize', this._onResize);
+    }
   };
 })();

@@ -41,7 +41,13 @@ class CollectorGame:
         return CollectorState.state_schema_version
 
     def init(self, config: Any = None) -> CollectorState:
-        cfg = config if isinstance(config, CollectorConfig) else self._config
+        if isinstance(config, CollectorConfig):
+            cfg = config
+        else:
+            # generic config from the registry's default builder carries the
+            # platform-wide step-time setting; honor it like territory/dungeon
+            step = getattr(config, "step_time_ms", None)
+            cfg = CollectorConfig(step_time_ms=step) if isinstance(step, int) else self._config
         n = cfg.grid_size
         pos = (n // 2, n // 2)
         dots = self._spawn_dots(cfg, {pos})

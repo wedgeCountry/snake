@@ -38,6 +38,8 @@
     // gets a fresh element instead of the one the previous game used
     const old = document.getElementById('scene');
     const canvas = old.cloneNode(false);
+    // drop any inline size a previous 3D renderer wrote; each view sizes itself
+    canvas.removeAttribute('style');
     old.parentNode.replaceChild(canvas, old);
     return canvas;
   }

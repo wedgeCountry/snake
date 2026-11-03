@@ -81,6 +81,15 @@ function env(status, score) {
     'shell loads the shared 2D grid view base before each game view');
   const grid2dSrc = fs.readFileSync(path.join(__dirname, '..', 'games', 'common', 'grid2d.js'), 'utf8');
   assert(grid2dSrc.includes('window.Grid2DView'), 'shared Grid2DView base exists');
+  assert(/resize\(\)\s*\{[\s\S]*?canvas\.width\s*=/.test(grid2dSrc),
+    'Grid2DView.resize sizes the drawing buffer to the viewport (full-screen 2D view)');
+  assert(grid2dSrc.includes("addEventListener('resize'") && grid2dSrc.includes("removeEventListener('resize'"),
+    'Grid2DView tracks window resize and removes the listener on dispose');
+  assert(/this\.dom\.speed\.value\s*=/.test(grid2dSrc),
+    'Grid2DView syncs the shared speed slider from meta/state in updateHud');
+  const cssSrc = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+  assert(/#scene\s*\{[^}]*width:\s*100%[^}]*height:\s*100%/.test(cssSrc),
+    'the #scene canvas fills the viewport instead of the intrinsic 300x150');
   for (const g of ['collector', 'territory', 'dungeon']) {
     const src = fs.readFileSync(path.join(__dirname, '..', 'games', g, 'view.js'), 'utf8');
     assert(src.includes('extends window.Grid2DView'), g + ' view extends the shared Grid2DView');

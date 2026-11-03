@@ -124,6 +124,18 @@ def test_settings_clamped(client):
     assert r.status_code == 422
 
 
+def test_settings_step_time_applies_to_active_session(client):
+    """The speed slider must affect the running game, not only the next one:
+    /api/settings writes the step time onto the active session's state, which
+    the session loop and WS transport re-read on every tick."""
+    api_new(client)  # helper re-inits the game with step_time_ms=400
+    assert api_state(client)["state"]["stepTimeMs"] == 400
+    r = client.post("/api/settings", json={"step_time_ms": 90})
+    assert r.status_code == 200
+    assert r.json()["stepTimeMs"] == 90
+    assert api_state(client)["state"]["stepTimeMs"] == 90
+
+
 def test_index_served(client):
     r = client.get("/")
     assert r.status_code == 200

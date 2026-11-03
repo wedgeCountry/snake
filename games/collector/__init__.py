@@ -16,7 +16,8 @@ def _factory(rng: random.Random | None) -> Game:
 def _serialize(state) -> dict:
     st = state if isinstance(state, CollectorState) else None
     return {"pos": list(st.pos), "dots": [list(d) for d in st.dots],
-            "score": st.score, "gridSize": st.grid_size} if st else {}
+            "score": st.score, "gridSize": st.grid_size,
+            "stepTimeMs": st.step_time_ms} if st else {}
 
 
 register("collector", name="Collector", real_time=True, max_players=1,
