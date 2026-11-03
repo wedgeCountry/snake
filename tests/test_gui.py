@@ -102,24 +102,19 @@ def test_gui_select_snake_start_press_each_button(browser, server):
     page.on("pageerror", lambda e: errors.append(str(e)))
 
     page.goto(server + "/", wait_until="domcontentloaded")
-    picker = page.locator("#gamePicker button")
-    picker.first.wait_for(timeout=10000)
-    assert picker.count() >= 2, "game picker should list collector and snake"
+    page.wait_for_selector('#gameSelectList button', timeout=10000)
 
     # 1. first step is "select a game": the select menu is shown, no game starts
     assert page.locator("#gameSelect").is_visible(), "game-select menu is the first screen"
     assert page.evaluate("document.body.classList.contains('no-game')"), \
         "no game selected yet"
     assert page.locator("#gameSelectList button").count() >= 2, \
-        "select menu lists collector and snake as cards"
+        "select menu lists the games as cards"
     assert "hidden" in (page.locator("#overlay").get_attribute("class") or ""), \
         "start overlay is hidden while no game is selected"
 
     # 2. select snake in the game-select menu -> the "Start" screen for snake appears
-    page.evaluate("window.__cv = document.getElementById('scene')")
     page.click('#gameSelectList button[data-game-id="snake"]')
-    page.wait_for_function(
-        "window.__cv !== document.getElementById('scene')", timeout=10000, polling=250)
     page.wait_for_function(
         "!document.getElementById('overlay').classList.contains('hidden') && "
         "document.getElementById('ovTitle').textContent.trim() === '3D Snake'",
@@ -129,32 +124,33 @@ def test_gui_select_snake_start_press_each_button(browser, server):
     page.locator("#overlay").dispatch_event("pointerdown")
     page.wait_for_selector("#overlay.hidden", state="attached", timeout=10000)
 
-    # 4. press each button on the page once after the other; after each press
-    # wait until the shell has settled (game switched / label updated).
-    # pointerdown is dispatched directly on the button because a game-over
-    # overlay may cover the header at any moment and would intercept a
-    # physical click; the app listens for pointerdown on these buttons.
+    # 4. in-game switching is not possible: the select menu stays hidden and
+    # there is no in-game picker once a game is running
+    assert page.locator("#gameSelect").is_hidden(), "select menu hidden during gameplay"
+    assert page.locator("#gamePicker").count() == 0, "no in-game game picker exists"
+
+    # 5. press each remaining button on the page once; pointerdown is
+    # dispatched directly because a game-over overlay may cover the header at
+    # any moment and would intercept a physical click
     steps = [
-        ('#gamePicker button[data-game-id="collector"]', None),
-        ('#gamePicker button[data-game-id="snake"]', None),
         ("#modeBtn", ("modeBtn", "Modus: Multi")),
         ("#torusBtn", ("torusBtn", "Torus: Aus")),
     ]
-    for selector, label in steps:
+    for selector, (el, expected) in steps:
         _dismiss_overlay_if_shown(page)
-        if label is None:
-            page.evaluate("window.__cv = document.getElementById('scene')")
-            page.locator(selector).dispatch_event("click")
-            page.wait_for_function(
-                "window.__cv !== document.getElementById('scene')", timeout=10000, polling=250)
-        else:
-            el, expected = label
-            page.locator(selector).dispatch_event("pointerdown")
-            page.wait_for_function(
-                f"document.getElementById('{el}').textContent.trim() === '{expected}'",
-                timeout=10000, polling=250)
+        page.locator(selector).dispatch_event("pointerdown")
+        page.wait_for_function(
+            f"document.getElementById('{el}').textContent.trim() === '{expected}'",
+            timeout=10000, polling=250)
 
     assert _text(page, "#score").isdigit(), "snake HUD shows a numeric score"
+
+    # 6. reloading returns to the game-select menu (the only place to switch)
+    page.reload(wait_until="domcontentloaded")
+    page.wait_for_selector('#gameSelectList button[data-game-id="territory"]', timeout=10000)
+    assert page.locator("#gameSelect").is_visible(), "reload returns to the select menu"
+    assert page.evaluate("document.body.classList.contains('no-game')"), \
+        "no game auto-starts after reload"
     assert errors == [], f"page errors during GUI test: {errors}"
     page.context.close()
 

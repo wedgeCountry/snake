@@ -109,29 +109,8 @@ html, body {
 }
 .hidden { display: none !important; }
 
-/* Game picker (shell) — always above the overlay so a game can be selected
-   even while a start/game-over overlay is visible */
-.game-picker {
-  position: fixed;
-  top: 48px;
-  left: 8px;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.game-picker button {
-  background: rgba(20, 28, 48, 0.85);
-  color: #cfe0ff;
-  border: 1px solid #33456b;
-  border-radius: 8px;
-  padding: 6px 12px;
-  font-size: 13px;
-  cursor: pointer;
-}
-.game-picker button:hover { background: rgba(40, 55, 90, 0.9); }
-
-/* Game select (first screen): full-screen menu with one card per game */
+/* Game select (first screen): full-screen menu with one card per game —
+   the only place a game is chosen; no in-game switching */
 .game-select {
   position: fixed; inset: 0; z-index: 20;
   display: none;

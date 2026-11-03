@@ -145,18 +145,11 @@
 
   async function init() {
     const games = await ApiClient.listGames();
-    const picker = document.getElementById('gamePicker');
     const list = document.getElementById('gameSelectList');
-    picker.innerHTML = '';
     list.innerHTML = '';
     for (const g of games) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.textContent = g.name;
-      btn.dataset.gameId = g.id;
-      btn.addEventListener('click', () => startGame(g));
-      picker.appendChild(btn);
-
+      // the game-select menu is the only way to pick a game; there is no
+      // in-game switching
       const card = document.createElement('button');
       card.type = 'button';
       card.className = 'game-select-card';

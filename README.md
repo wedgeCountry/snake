@@ -30,8 +30,9 @@ Collector (2D) laufen über dieselben generischen Routen und Verträge.
   (`serialize` im Registry-Eintrag), sodass `app.py` spiel-agnostisch bleibt.
 - **Shared Contract Suite** (`tests/contracts/`): parametrisiert über die
   Registry — jede `Game`-Implementierung muss sie bestehen.
-- **Frontend-Shell** (`static/main.js` als Composition Root): Game-Picker
-  (füttert sich aus `GET /api/games`), lädt `static/games/<id>/` hinter dem
+- **Frontend-Shell** (`static/main.js` als Composition Root): Game-Select-Menü
+  (füttert sich aus `GET /api/games`, erstes Screen — im Spiel gibt es kein
+  Game-Wechsel), lädt `static/games/<id>/` hinter dem
   `GameView`-Interface (`render`/`updateHud`/`showOverlay`/`dispose`) mit
   Error Boundary. `viewmodel.js` konsumiert den Envelope und dispatcht auf
   `gameId`; subscribed bei `realTime`, sonst Polling.

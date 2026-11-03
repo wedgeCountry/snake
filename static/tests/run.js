@@ -72,7 +72,9 @@ function env(status, score) {
   assert(/let starting = false;[\s\S]*if \(starting \|\| vm\.running\) return;/.test(mainSrc),
     'startIfNeeded is re-entrancy guarded (pointerdown + touchend double fire)');
   assert(!mainSrc.includes('startGame(games[0])'),
-    'shell does not auto-start a game; the first step is the game picker');
+    'shell does not auto-start a game; the first step is the game-select menu');
+  assert(!mainSrc.includes("getElementById('gamePicker')"),
+    'no in-game game picker: switching games is only possible on the select screen');
   assert(mainSrc.includes('showGameSelect()'),
     'shell shows the game-select menu before any game is chosen');
   assert(mainSrc.includes('window.__shell = shell'),

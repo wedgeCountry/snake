@@ -46,7 +46,7 @@ smallest working example. Rules of the pipeline:
 2. **Register the package** in `games/__init__.py`: `from . import tictactoe`.
 3. **Frontend**: add `static/games/tictactoe/view.js` exposing
    `window.GameView_tictactoe` with `render(vm, now)`, `updateHud(vm)`,
-   `showOverlay(title, msg, cta)`, `dispose()`. It appears in the game picker
+   `showOverlay(title, msg, cta)`, `dispose()`. It appears in the game-select menu
    automatically via `GET /api/games`.
 4. **Tests**: add `tests/test_<id>.py`. The shared suite in `tests/contracts/`
    (state round-trip, seeded-RNG determinism, action validation, terminal
