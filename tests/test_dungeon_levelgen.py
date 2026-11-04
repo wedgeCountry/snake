@@ -1,9 +1,10 @@
 """Tests for the randomized dungeon level generator and its difficulty
-measurement (duel-threat model: how close monster stats are to the hero's)."""
+measurement (duel-threat model against the party: how close monster stats are
+to the party's)."""
 
 import random
 
-from games.dungeon.combat import make_hero
+from games.dungeon.combat import make_party
 from games.dungeon.config import DungeonConfig
 from games.dungeon.core import DungeonGame
 from games.dungeon.levelgen import (
@@ -13,6 +14,7 @@ from games.dungeon.levelgen import (
     duel_threat,
     generate_level,
     generate_level_with_target,
+    hit_probability,
     measure_difficulty,
 )
 from games.registry import get
@@ -24,6 +26,13 @@ def test_clamp_difficulty_stays_in_1_to_10():
     assert clamp_difficulty(7) == 7
     assert clamp_difficulty(-3) == 1
     assert clamp_difficulty("x") == 5
+
+
+def test_hit_probability_follows_the_d20_rule():
+    assert hit_probability(5, 25) == 0.05, "only a natural 20 can hit AC 25 with +5"
+    assert hit_probability(5, 26) == 0.05, "clamped residual"
+    assert hit_probability(30, 10) == 1.0, "always hits"
+    assert hit_probability(0, 10) == 0.55  # d20 >= 10 -> 11/20
 
 
 def test_generate_level_layout_is_valid():
@@ -40,7 +49,8 @@ def test_generate_level_layout_is_valid():
     assert len(set(cells)) == len(cells), "no overlapping placements"
     assert all(0 <= x < n and 0 <= y < n for x, y in cells)
     assert lvl["monsters"] and lvl["potions"]
-    assert all(m["weapon"]["name"] and m["skills"] and m["level"] >= 1 for m in lvl["monsters"])
+    assert all(m["weapon"]["die"] and m["skills"] and m["level"] >= 1
+               and m["ac"] >= 12 and m["attack"] >= 3 for m in lvl["monsters"])
 
 
 def test_harder_levels_have_more_stronger_monsters_and_fewer_potions():
@@ -54,27 +64,27 @@ def test_harder_levels_have_more_stronger_monsters_and_fewer_potions():
 
 def test_duel_threat_measures_stat_closeness_and_caps_at_lethal():
     cfg = DungeonConfig()
-    hero = make_hero(cfg)
-    weak = {"name": "M", "hp": 1, "max_hp": 1, "dmg": 1, "level": 1,
-            "weapon": {"name": "Claws", "dmg": 0, "crit": 0.0}, "traits": [], "skills": []}
-    strong = {"name": "M", "hp": 1000, "max_hp": 1000, "dmg": 100, "level": 5,
-              "weapon": {"name": "Doom Axe", "dmg": 8, "crit": 0.2}, "traits": [], "skills": []}
-    assert 0 < duel_threat(weak, hero, cfg) < 0.5
-    assert duel_threat(strong, hero, cfg) == 1.0, "overwhelming monster = lethal (capped)"
+    party = make_party(cfg)
+    weak = {"name": "M", "hp": 30, "max_hp": 30, "ac": 10, "attack": 1, "level": 1,
+            "weapon": {"name": "Claws", "die": 4, "bonus": 0}, "traits": [], "skills": []}
+    strong = {"name": "M", "hp": 1000, "max_hp": 1000, "ac": 30, "attack": 100, "level": 5,
+              "weapon": {"name": "Doom Axe", "die": 12, "bonus": 8}, "traits": [], "skills": []}
+    assert 0 < duel_threat(weak, party, cfg) < 0.5
+    assert duel_threat(strong, party, cfg) == 1.0, "overwhelming monster = lethal (capped)"
 
 
 def test_measure_difficulty_rises_with_monster_stats():
     cfg = DungeonConfig()
-    hero = make_hero(cfg)
+    party = make_party(cfg)
     base = generate_level(random.Random(1), cfg, 1)
-    easy = measure_difficulty(base, hero, cfg)
+    easy = measure_difficulty(base, party, cfg)
     beefed = generate_level(random.Random(1), cfg, 1)
     for m in beefed["monsters"]:
-        m["dmg"] += 20
+        m["attack"] += 20
         m["level"] = 5
         m["max_hp"] += 100
         m["hp"] = m["max_hp"]
-    hard = measure_difficulty(beefed, hero, cfg)
+    hard = measure_difficulty(beefed, party, cfg)
     assert easy < hard <= MAX_DIFFICULTY
 
 
@@ -104,9 +114,10 @@ def test_game_init_uses_generator_and_stores_difficulty():
     assert s.difficulty == 8
     assert MIN_DIFFICULTY <= s.level_difficulty <= MAX_DIFFICULTY
     n = s.grid_size
-    assert (s.hero["x"], s.hero["y"]) in {(0, 0), (n - 1, 0), (0, n - 1), (n - 1, n - 1)}
+    leader = s.party[0]
+    assert (leader["x"], leader["y"]) in {(0, 0), (n - 1, 0), (0, n - 1), (n - 1, n - 1)}
     boss = next(m for m in s.monsters if m["kind"] == "boss")
-    assert (boss["x"], boss["y"]) == (n - 1 - s.hero["x"], n - 1 - s.hero["y"])
+    assert (boss["x"], boss["y"]) == (n - 1 - leader["x"], n - 1 - leader["y"])
 
 
 def test_serializer_exposes_requested_and_measured_difficulty():
@@ -115,3 +126,4 @@ def test_serializer_exposes_requested_and_measured_difficulty():
     d = get("dungeon").serialize(g.state())
     assert d["difficulty"] == 3
     assert MIN_DIFFICULTY <= d["levelDifficulty"] <= MAX_DIFFICULTY
+    assert [m["class"] for m in d["party"]] == ["warrior", "mage", "cleric"]

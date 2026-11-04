@@ -1,7 +1,11 @@
-"""Dungeon (RPG) rule configuration, incl. the combat system's data tables.
+"""Dungeon (party RPG) rule configuration, incl. the combat system's data tables.
 
-Actors (hero + monsters) carry a weapon, traits and a level; monsters also
-carry skills. All tables are plain data so state stays JSON-serializable.
+A simplified Baldur's Gate: a party of classed heroes (warrior/mage/cleric)
+moves as a unit through a grid dungeon; combat is D&D-style — d20 attack roll
++ attack bonus vs armor class, damage dice from the weapon, initiative-ordered
+rounds. Actors (party members + monsters) carry a weapon, traits and a level;
+monsters also carry skills. All tables are plain data so state stays
+JSON-serializable.
 """
 
 from __future__ import annotations
@@ -12,28 +16,41 @@ from ..engine import RuleConfig
 
 GRID_SIZE = 8
 MAX_TURNS = 200
-HERO_HP = 20
-HERO_DMG = 4
 MONSTER_HP = 8
-MONSTER_DMG = 3
+MONSTER_AC = 12
+MONSTER_ATTACK = 3
+MONSTER_INIT = 2
 BOSS_HP = 30
-BOSS_DMG = 6
+BOSS_AC = 15
+BOSS_ATTACK = 6
+BOSS_INIT = 4
 BOSS_LEVEL = 5
 POTION_HEAL = 8
 SPAWN_CHANCE = 0.35
 XP_PER_KILL = 10
 XP_LEVEL_UP = 30
 
-# weapon key -> {name, dmg bonus, crit chance}
+# weapon key -> {name, damage die sides, flat damage bonus}
 WEAPON_TABLE: dict[str, dict] = {
-    "fists":         {"name": "Fists",          "dmg": 0, "crit": 0.00},
-    "rusty_sword":   {"name": "Rusty Sword",    "dmg": 2, "crit": 0.05},
-    "iron_sword":    {"name": "Iron Sword",     "dmg": 4, "crit": 0.10},
-    "knights_blade": {"name": "Knight's Blade", "dmg": 6, "crit": 0.15},
-    "claws":         {"name": "Claws",          "dmg": 1, "crit": 0.05},
-    "fangs":         {"name": "Fangs",          "dmg": 3, "crit": 0.10},
-    "venom_sting":   {"name": "Venom Sting",    "dmg": 4, "crit": 0.15},
-    "doom_axe":      {"name": "Doom Axe",       "dmg": 8, "crit": 0.20},
+    "fists":         {"name": "Fists",          "die": 4,  "bonus": 0},
+    "staff":         {"name": "Staff",          "die": 6,  "bonus": 1},
+    "rusty_sword":   {"name": "Rusty Sword",    "die": 8,  "bonus": 1},
+    "iron_sword":    {"name": "Iron Sword",     "die": 8,  "bonus": 3},
+    "knights_blade": {"name": "Knight's Blade", "die": 10, "bonus": 4},
+    "claws":         {"name": "Claws",          "die": 6,  "bonus": 1},
+    "fangs":         {"name": "Fangs",          "die": 8,  "bonus": 2},
+    "venom_sting":   {"name": "Venom Sting",    "die": 8,  "bonus": 3},
+    "doom_axe":      {"name": "Doom Axe",       "die": 12, "bonus": 5},
+}
+
+# party class key -> base stats; the party is one member per listed class
+PARTY_TABLE: dict[str, dict] = {
+    "warrior": {"name": "Warrior", "hp": 30, "ac": 16, "attack": 5, "init": 2,
+                "weapon": "iron_sword", "traits": ("tough",), "skills": ()},
+    "mage":    {"name": "Mage",    "hp": 18, "ac": 12, "attack": 4, "init": 3,
+                "weapon": "staff", "traits": (), "skills": ("power_strike",)},
+    "cleric":  {"name": "Cleric",  "hp": 24, "ac": 14, "attack": 4, "init": 1,
+                "weapon": "rusty_sword", "traits": (), "skills": ("regenerate",)},
 }
 
 # trait key -> passive effects
@@ -56,13 +73,13 @@ SKILL_TABLE: dict[str, dict] = {
 
 # legendary weapon key -> weapon stats + a fixed starting enchantment
 LEGENDARY_TABLE: dict[str, dict] = {
-    "dragonfang":  {"name": "Dragonfang",  "dmg": 7, "crit": 0.25,
+    "dragonfang":  {"name": "Dragonfang",  "die": 12, "bonus": 4,
                     "enchant": {"school": "fire",  "level": 1}},
-    "frostmourne": {"name": "Frostmourne", "dmg": 6, "crit": 0.15,
+    "frostmourne": {"name": "Frostmourne", "die": 10, "bonus": 4,
                     "enchant": {"school": "frost", "level": 1}},
-    "bloodthirst": {"name": "Bloodthirst", "dmg": 5, "crit": 0.10,
+    "bloodthirst": {"name": "Bloodthirst", "die": 10, "bonus": 3,
                     "enchant": {"school": "blood", "level": 1}},
-    "stormcaller": {"name": "Stormcaller", "dmg": 6, "crit": 0.20,
+    "stormcaller": {"name": "Stormcaller", "die": 10, "bonus": 4,
                     "enchant": {"school": "storm", "level": 1}},
 }
 
@@ -83,36 +100,40 @@ ENCHANT_TABLE: dict[str, dict] = {
 class DungeonConfig(RuleConfig):
     grid_size: int = GRID_SIZE
     max_turns: int = MAX_TURNS
-    hero_hp: int = HERO_HP
-    hero_dmg: int = HERO_DMG
     monster_hp: int = MONSTER_HP
-    monster_dmg: int = MONSTER_DMG
+    monster_ac: int = MONSTER_AC
+    monster_attack: int = MONSTER_ATTACK
+    monster_init: int = MONSTER_INIT
     boss_hp: int = BOSS_HP
-    boss_dmg: int = BOSS_DMG
+    boss_ac: int = BOSS_AC
+    boss_attack: int = BOSS_ATTACK
+    boss_init: int = BOSS_INIT
     boss_level: int = BOSS_LEVEL
     potion_heal: int = POTION_HEAL
     spawn_chance: float = SPAWN_CHANCE
     xp_per_kill: int = XP_PER_KILL
     xp_level_up: int = XP_LEVEL_UP
     step_time_ms: int = 300
-    # combat system
-    hero_weapon: str = "rusty_sword"
-    hero_traits: tuple[str, ...] = ("tough",)
+    # the party: one hero per class key, in this order (index 0 is the leader
+    # and holds the party's gold purse and grid position)
+    party_classes: tuple[str, ...] = ("warrior", "mage", "cleric")
     monster_weapons: tuple[str, ...] = ("claws", "fangs", "venom_sting")
     boss_weapon: str = "doom_axe"
     monster_skills: tuple[str, ...] = ("power_strike", "poison", "regenerate")
     boss_skills: tuple[str, ...] = ("doom_slam", "power_strike")
     max_traits: int = 3
     max_skills: int = 2
-    hit_chance: float = 0.90        # base chance to land a hit
-    crit_multiplier: float = 2.0    # crit damage multiplier
-    level_dmg_bonus: int = 1        # +dmg per level above 1
+    # d20 combat: natural 1 always misses, natural 20 always hits and doubles
+    # the damage dice; a hit needs d20 + attack >= defender AC
+    level_dmg_bonus: int = 1        # +1 weapon damage per level above 1
+    level_attack_bonus: int = 1     # +1 attack bonus per level above 1
+    level_hp_bonus: int = 6         # +6 max hp per level above 1
     max_combat_rounds: int = 12     # rounds per encounter before hp ratio decides
     weapon_drop_chance: float = 0.5  # killed monster drops its weapon
     # level generator: requested difficulty 1-10, and the calibration of the
     # duel-threat measure (total expected hp fraction lost that maps to 10)
     difficulty: int = 5
-    difficulty_reference: float = 2.0
+    difficulty_reference: float = 0.2
     level_gen_attempts: int = 25
     # legendary objects & enchanting
     max_enchant_level: int = 3

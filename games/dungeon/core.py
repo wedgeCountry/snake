@@ -1,8 +1,9 @@
-"""Dungeon core — a pure single-player RPG: guide a hero (weapon, traits,
-levels) through a grid dungeon, fight monsters (weapons, traits, levels,
-skills) in round-based combat, grab potions and dropped weapons, level up,
-and slay the boss in the far corner. Zero I/O, injectable RNG. Implements
-the pipeline Game protocol."""
+"""Dungeon core — a simplified Baldur's Gate: a party of classed heroes
+(warrior/mage/cleric, each with hp, AC, attack bonus, weapon, traits, level)
+moves as a unit through a grid dungeon, fights monsters in initiative-ordered
+d20-vs-AC round combat, grabs potions (party-wide heal) and dropped weapons,
+shares XP and levels up every member, and slay the boss in the far corner.
+Zero I/O, injectable RNG. Implements the pipeline Game protocol."""
 
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ from ..common.direction import Direction, DirectionQueue
 from ..common.grid_move import clamp2d
 from ..common.spawner import WeightedSpawner
 from ..engine import GameState
-from .combat import enchant_weapon, make_hero, make_legendary, make_monster, random_trait, resolve_encounter
+from .combat import enchant_weapon, make_legendary, make_monster, make_party, random_trait, resolve_encounter
 from .config import LEGENDARY_TABLE, DungeonConfig
 from .levelgen import clamp_difficulty, generate_level_with_target
 
@@ -22,20 +23,24 @@ COMBAT_LOG_LINES = 6
 
 
 def _weapon_score(w: dict) -> float:
-    return w.get("dmg", 0) * 2 + w.get("crit", 0.0) * 10
+    return w.get("die", 4) / 2 + 0.5 + w.get("bonus", 0)
+
+
+def _leader(state: "DungeonState") -> dict:
+    return state.party[0]
 
 
 class DungeonState(GameState):
-    state_schema_version = 1
+    state_schema_version = 2
 
-    def __init__(self, grid_size: int, hero: dict, monsters: list[dict],
+    def __init__(self, grid_size: int, party: list[dict], monsters: list[dict],
                  potions: list[tuple[int, int]], score: int, turn: int, max_turns: int,
                  status: str = "running", step_time_ms: int = 300,
                  combat_log: list[str] | None = None, difficulty: int = 5,
                  level_difficulty: float = 5.0) -> None:
         self.grid_size = grid_size
-        self.hero = hero  # {name, x, y, hp, max_hp, dmg, level, xp, gold, weapon, traits, skills}
-        self.monsters = monsters  # [{name, x, y, hp, max_hp, dmg, level, kind, weapon, traits, skills}]
+        self.party = party  # [{name, class, x, y, hp, max_hp, ac, attack, init, level, xp, weapon, traits, skills}]
+        self.monsters = monsters  # [{name, x, y, kind, hp, max_hp, ac, attack, init, level, weapon, traits, skills}]
         self.potions = list(potions)
         self.score = score
         self.turn = turn
@@ -69,9 +74,10 @@ class DungeonGame:
             cfg = DungeonConfig(step_time_ms=step) if isinstance(step, int) else self._config
         n = cfg.grid_size
         level = generate_level_with_target(self._rng, cfg, cfg.difficulty)
-        hero = make_hero(cfg)
-        hero["x"], hero["y"] = level["hero_start"]
-        self._state = DungeonState(n, hero, [level["boss"]] + level["monsters"],
+        party = make_party(cfg)
+        for member in party:
+            member["x"], member["y"] = level["hero_start"]
+        self._state = DungeonState(n, party, [level["boss"]] + level["monsters"],
                                    list(level["potions"]), 0, 0, cfg.max_turns,
                                    step_time_ms=cfg.step_time_ms,
                                    difficulty=level["difficulty"],
@@ -88,11 +94,11 @@ class DungeonGame:
 
     def restore(self, data: dict) -> None:
         """Restore a savegame (wire-format state dict from the serializer)."""
-        hero = copy.deepcopy(data["hero"])
+        party = [copy.deepcopy(m) for m in data["party"]]
         monsters = [copy.deepcopy(m) for m in data.get("monsters", [])]
         potions = [tuple(p) for p in data.get("potions", [])]
         self._state = DungeonState(
-            int(data["gridSize"]), hero, monsters, potions,
+            int(data["gridSize"]), party, monsters, potions,
             int(data.get("score", 0)), int(data.get("turn", 0)),
             int(data.get("maxTurns", self._config.max_turns)),
             status=str(data.get("status", "running")),
@@ -117,11 +123,15 @@ class DungeonGame:
             direction = Direction.from_name_2d(str(action["direction"]))
             self._queue.push(direction, self._last)
         elif "enchant" in action:
-            school = str(action["enchant"]) or None
-            ok, msg = enchant_weapon(self.state().hero, self._config, school)
+            state = self.state()
+            idx = int(action.get("member", 0))
+            if not 0 <= idx < len(state.party):
+                raise ValueError(f"no party member {idx}")
+            ok, msg = enchant_weapon(state.party[idx], self._config,
+                                     str(action["enchant"]) or None, purse=_leader(state))
             if not ok:
                 raise ValueError(msg)
-            self.state().combat_log = (self.state().combat_log + [msg])[-COMBAT_LOG_LINES:]
+            state.combat_log = (state.combat_log + [msg])[-COMBAT_LOG_LINES:]
         else:
             raise ValueError(f"unknown action: {sorted(action)}")
 
@@ -135,79 +145,90 @@ class DungeonGame:
         d = self._queue.pop() or self._last
         self._last = d
         dx, dy = d.as_2d()
-        hero = state.hero
-        hero["x"], hero["y"] = clamp2d(hero["x"] + dx, hero["y"] + dy, n)
+        leader = _leader(state)
+        nx, ny = clamp2d(leader["x"] + dx, leader["y"] + dy, n)
+        for member in state.party:
+            member["x"], member["y"] = nx, ny
         self._combat(state, cfg)
         self._loot(state, cfg)
         self._maybe_spawn(state, cfg)
         self._level_up(state, cfg)
-        state.score = hero["xp"] + 2 * hero["gold"]
-        if hero["hp"] <= 0:
+        state.score = sum(m["xp"] for m in state.party) + 2 * leader.get("gold", 0)
+        if all(m["hp"] <= 0 for m in state.party):
             state.status = "dead"
         elif state.turn >= state.max_turns:
             state.status = "dead"
         return state
 
     def _combat(self, state: DungeonState, cfg: DungeonConfig) -> None:
-        hero = state.hero
-        cell = (hero["x"], hero["y"])
+        leader = _leader(state)
+        cell = (leader["x"], leader["y"])
         monster = next((m for m in state.monsters if (m["x"], m["y"]) == cell), None)
         if monster is None:
             return
-        log = resolve_encounter(self._rng, hero, monster, cfg)
+        log = resolve_encounter(self._rng, state.party, monster, cfg)
         if monster["hp"] <= 0:
             state.monsters.remove(monster)
             if monster["kind"] == "boss":
                 state.status = "won"
-                hero["gold"] += 25
+                leader["gold"] = leader.get("gold", 0) + 25
             else:
-                hero["xp"] += cfg.xp_per_kill
-                hero["gold"] += 5
-            self._maybe_take_weapon(hero, monster, cfg, log)
+                for member in state.party:
+                    member["xp"] += cfg.xp_per_kill
+                leader["gold"] = leader.get("gold", 0) + 5
+            self._maybe_take_weapon(state, monster, cfg, log)
         state.combat_log = log[-COMBAT_LOG_LINES:]
         for m in state.monsters:
             m.pop("frozen", None)
-        hero.pop("frozen", None)
+        for member in state.party:
+            member.pop("frozen", None)
 
-    def _maybe_take_weapon(self, hero: dict, monster: dict, cfg: DungeonConfig, log: list[str]) -> None:
-        current = hero.get("weapon") or {}
+    def _maybe_take_weapon(self, state: DungeonState, monster: dict, cfg: DungeonConfig, log: list[str]) -> None:
         if monster.get("kind") == "boss" and cfg.boss_legendary_drop:
             drop = make_legendary(self._rng)  # bosses always drop a legendary object
         else:
             if self._rng.random() >= cfg.weapon_drop_chance:
                 return
             drop = monster.get("weapon") or {}
-        if _weapon_score(drop) > _weapon_score(current):
-            hero["weapon"] = dict(drop)
+        # the dropped weapon goes to the member whose current weapon improves most
+        best_member, best_gain = None, 0.0
+        for member in state.party:
+            gain = _weapon_score(drop) - _weapon_score(member.get("weapon") or {})
+            if gain > best_gain:
+                best_member, best_gain = member, gain
+        if best_member is not None:
+            best_member["weapon"] = dict(drop)
             label = "legendary " if drop.get("key") in LEGENDARY_TABLE else ""
-            log.append(f"{hero['name']} takes the {label}{drop['name']}!")
+            log.append(f"{best_member['name']} takes the {label}{drop['name']}!")
 
     def _loot(self, state: DungeonState, cfg: DungeonConfig) -> None:
-        hero = state.hero
-        cell = (hero["x"], hero["y"])
+        leader = _leader(state)
+        cell = (leader["x"], leader["y"])
         if cell in state.potions:
             state.potions.remove(cell)
-            hero["hp"] = min(hero["max_hp"], hero["hp"] + cfg.potion_heal)
+            for member in state.party:
+                member["hp"] = min(member["max_hp"], member["hp"] + cfg.potion_heal)
 
     def _level_up(self, state: DungeonState, cfg: DungeonConfig) -> None:
-        hero = state.hero
-        while hero["xp"] >= cfg.xp_level_up and state.status == "running":
-            hero["xp"] -= cfg.xp_level_up
-            hero["level"] += 1
-            hero["dmg"] += 2
-            hero["max_hp"] += 6
-            trait = random_trait(self._rng, [t.get("key", t["name"]) for t in hero["traits"]], cfg)
-            if trait is not None:
-                hero["traits"].append(trait)
-                hero["max_hp"] += trait.get("max_hp", 0)
-            hero["hp"] = hero["max_hp"]
+        for member in state.party:
+            while member["xp"] >= cfg.xp_level_up and state.status == "running":
+                member["xp"] -= cfg.xp_level_up
+                member["level"] += 1
+                member["attack"] += cfg.level_attack_bonus
+                member["max_hp"] += cfg.level_hp_bonus
+                trait = random_trait(self._rng, [t.get("key", t["name"]) for t in member["traits"]], cfg)
+                if trait is not None:
+                    member["traits"].append(trait)
+                    member["max_hp"] += trait.get("max_hp", 0)
+                member["hp"] = member["max_hp"]
 
     def _maybe_spawn(self, state: DungeonState, cfg: DungeonConfig) -> None:
         if self._rng.random() >= cfg.spawn_chance:
             return
         n = state.grid_size
+        leader = _leader(state)
         occupied = {(m["x"], m["y"]) for m in state.monsters}
-        occupied.add((state.hero["x"], state.hero["y"]))
+        occupied.add((leader["x"], leader["y"]))
         occupied.update(state.potions)
         free = sorted((x, y) for x in range(n) for y in range(n) if (x, y) not in occupied)
         if not free:

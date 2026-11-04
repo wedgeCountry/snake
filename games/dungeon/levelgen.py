@@ -1,10 +1,10 @@
 """Randomized dungeon level generator with a 1-10 difficulty target.
 
-`generate_level` builds a randomized layout (hero start corner, boss in the
+`generate_level` builds a randomized layout (party start corner, boss in the
 diagonally opposite corner, monsters and potions on free cells) from a
 continuous intensity in [0,1]. `measure_difficulty` independently scores a
-layout against the hero's stats: for every monster it estimates the fraction
-of the hero's effective HP the monster can deal before dying (duel threat,
+layout against the party's stats: for every monster it estimates the fraction
+of the party's effective HP the monster can deal before dying (duel threat,
 capped at 1.0 = lethal), which is exactly "how close the monster's stats are
 to the player's". `generate_level_with_target` searches intensities
 (bounded attempts, seeded RNG keeps it deterministic) and returns the layout
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import random
 
-from .combat import make_hero, make_monster
+from .combat import make_monster, make_party
 from .config import DungeonConfig
 
 MIN_DIFFICULTY = 1
@@ -62,25 +62,38 @@ def generate_level(rng: random.Random, cfg: DungeonConfig, difficulty: int,
     }
 
 
-def _dps(actor: dict, cfg: DungeonConfig) -> float:
-    """Expected damage per strike: base + weapon + level, hit chance, crit
-    expectation, plus expected skill bonus damage."""
+def hit_probability(attack: int, ac: int) -> float:
+    """Chance that d20 + attack >= ac (natural 20 always hits, natural 1
+    always misses), clamped to a small residual chance either way."""
+    p = (21 + attack - ac) / 20.0
+    return min(1.0, max(0.05, p))
+
+
+def _dps(actor: dict, cfg: DungeonConfig, target_ac: int) -> float:
+    """Expected damage per strike against a defender with the given AC: weapon
+    die expectation + bonus + level scaling, times hit probability, plus the
+    natural-20 extra (doubled dice) and expected skill bonus damage."""
     weapon = actor.get("weapon") or {}
-    base = (actor.get("dmg", 0) + weapon.get("dmg", 0)
-            + (actor.get("level", 1) - 1) * cfg.level_dmg_bonus)
+    avg_hit = (weapon.get("die", 4) + 1) / 2 + weapon.get("bonus", 0) \
+        + (actor.get("level", 1) - 1) * cfg.level_dmg_bonus
     # enchantment expectation: fire adds flat damage, storm adds double-hit chance
     ench = weapon.get("enchant") or {}
     elvl = ench.get("level", 0)
     if ench.get("school") == "fire":
-        base += 2 * elvl
+        avg_hit += 2 * elvl
     elif ench.get("school") == "storm":
-        base *= 1 + 0.15 * elvl
-    crit = weapon.get("crit", 0.0)
+        avg_hit *= 1 + 0.15 * elvl
+    hit_p = hit_probability(actor.get("attack", 0), target_ac)
+    base = max(1.0, avg_hit)
     skill_bonus = sum(
         s.get("chance", 0) * (s.get("dmg", 0) + base * max(0.0, s.get("mult", 1.0) - 1))
         for s in actor.get("skills") or []
     )
-    return max(1.0, base) * cfg.hit_chance * (1 + crit * (cfg.crit_multiplier - 1)) + skill_bonus
+    return hit_p * base * (1 + 1 / 20) + skill_bonus  # nat 20 doubles the dice
+
+
+def _party_dps(party: list[dict], target_ac: int, cfg: DungeonConfig) -> float:
+    return sum(_dps(m, cfg, target_ac) for m in party if m.get("hp", 0) > 0)
 
 
 def _effective_hp(actor: dict) -> float:
@@ -89,29 +102,36 @@ def _effective_hp(actor: dict) -> float:
     return max(1.0, actor.get("max_hp", 1)) / max(0.05, 1.0 - dodge)
 
 
-def duel_threat(monster: dict, hero: dict, cfg: DungeonConfig) -> float:
-    """Expected fraction of the hero's effective HP lost in a duel against
-    this monster, capped at 1.0 (the monster can kill the hero outright).
+def _party_effective_hp(party: list[dict]) -> float:
+    return sum(_effective_hp(m) for m in party if m.get("hp", 0) > 0)
+
+
+def duel_threat(monster: dict, party: list[dict], cfg: DungeonConfig) -> float:
+    """Expected fraction of the party's effective HP lost in a duel against
+    this monster, capped at 1.0 (the monster can wipe the party outright).
     This is the core "how close are the monster's stats to the player's"."""
-    hero_dr = sum(t.get("dr", 0) for t in hero.get("traits") or [])
-    hero_dps = _dps(hero, cfg)
-    mon_dps = max(1.0, _dps(monster, cfg) - hero_dr)
-    rounds_to_kill = max(1.0, monster.get("max_hp", 1)) / hero_dps
-    return min(1.0, mon_dps * rounds_to_kill / _effective_hp(hero))
+    avg_ac = sum(m.get("ac", 10) for m in party) / max(1, len(party))
+    avg_dr = sum(sum(t.get("dr", 0) for t in m.get("traits") or []) for m in party) / max(1, len(party))
+    party_dps = _party_dps(party, monster.get("ac", 12), cfg)
+    mon_dps = max(1.0, _dps(monster, cfg, avg_ac) - avg_dr)
+    rounds_to_kill = max(1.0, monster.get("max_hp", 1) / max(1.0, party_dps))
+    return min(1.0, mon_dps * (rounds_to_kill - 1) / max(1.0, _party_effective_hp(party)))
 
 
-def measure_difficulty(level: dict, hero: dict, cfg: DungeonConfig) -> float:
+def measure_difficulty(level: dict, party: list[dict], cfg: DungeonConfig) -> float:
     """Score a layout 1-10: mean monster duel threat amplified by monster
     count, plus a boss pressure term, minus potion relief."""
     monsters = level.get("monsters", [])
-    threats = [duel_threat(m, hero, cfg) for m in monsters]
+    threats = [duel_threat(m, party, cfg) for m in monsters]
     mean_threat = sum(threats) / len(threats) if threats else 0.0
     count_factor = len(monsters) / max(1, level["grid_size"] - 1)
-    potion_relief = min(0.3, 0.3 * cfg.potion_heal * len(level.get("potions", []))
-                        / max(1, hero.get("max_hp", 1)))
-    boss_term = 0.2 * duel_threat(level["boss"], hero, cfg)
+    party_hp = max(1, sum(m.get("max_hp", 1) for m in party))
+    potion_relief = min(0.3, 0.3 * cfg.potion_heal * len(level.get("potions", [])) / party_hp)
+    boss_term = 0.1 * duel_threat(level["boss"], party, cfg)
     base = mean_threat * (0.5 + 0.5 * count_factor) + boss_term - potion_relief
-    score = MIN_DIFFICULTY + (MAX_DIFFICULTY - MIN_DIFFICULTY) * min(1.0, max(0.0, base))
+    # difficulty_reference is the calibration knob: the duel-threat base value
+    # that maps to difficulty 10
+    score = MIN_DIFFICULTY + (MAX_DIFFICULTY - MIN_DIFFICULTY) * min(1.0, max(0.0, base / cfg.difficulty_reference))
     return round(min(MAX_DIFFICULTY, max(MIN_DIFFICULTY, score)), 2)
 
 
@@ -126,9 +146,10 @@ def generate_level_with_target(rng: random.Random, cfg: DungeonConfig, difficult
     for i in range(attempts):
         intensity = i / (attempts - 1) if attempts > 1 else (d - MIN_DIFFICULTY) / (MAX_DIFFICULTY - MIN_DIFFICULTY)
         cand = generate_level(rng, cfg, d, intensity=intensity)
-        hero = make_hero(cfg)
-        hero["x"], hero["y"] = cand["hero_start"]
-        cand["measured_difficulty"] = measure_difficulty(cand, hero, cfg)
+        party = make_party(cfg)
+        for member in party:
+            member["x"], member["y"] = cand["hero_start"]
+        cand["measured_difficulty"] = measure_difficulty(cand, party, cfg)
         err = abs(cand["measured_difficulty"] - d)
         if best is None or err < best_err:
             best, best_err = cand, err

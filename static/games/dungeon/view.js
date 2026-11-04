@@ -1,6 +1,7 @@
-/* Dungeon Quest view — thin subclass of the shared 2D grid view. */
+/* Dungeon Quest view — party RPG on the shared 2D grid view: the hero party
+   moves as one marker, the HUD lists every member's hp/ac. */
 (function () {
-  const COLORS = { hero: '#4dff88', monster: '#ff5c7a', boss: '#b3123f', potion: '#4dd0ff', log: '#aab6e8' };
+  const COLORS = { party: ['#4dff88', '#ffd54d', '#4dd0ff'], monster: '#ff5c7a', boss: '#b3123f', potion: '#4dd0ff', log: '#aab6e8' };
 
   window.GameView_dungeon = class DungeonView extends window.Grid2DView {
     constructor(canvas) {
@@ -9,14 +10,14 @@
 
     hudExtra(vm) {
       const s = vm.state;
-      const hero = s.hero || {};
-      this.dom.height.textContent = hero.hp + ' HP';
+      const party = s.party || [];
+      const hp = party.reduce((a, m) => a + (m.hp || 0), 0);
+      const maxHp = party.reduce((a, m) => a + (m.max_hp || 0), 0);
+      this.dom.height.textContent = hp + '/' + maxHp + ' HP';
       if (this.dom.star) {
-        const w = hero.weapon || {};
-        const ench = w.enchant ? ' [' + w.enchant.name + ']' : '';
+        const gold = (party[0] && party[0].gold) || 0;
         this.dom.star.style.display = '';
-        this.dom.star.textContent = 'Lvl ' + (hero.level || 1) + ' · ' +
-          (hero.dmg || 0) + '+' + (w.dmg || 0) + ' DMG · ' + (w.name || '—') + ench;
+        this.dom.star.textContent = 'Lv ' + (party[0] ? party[0].level : 1) + ' · Gold ' + gold + ' · [E] verzaubern';
       }
     }
 
@@ -42,20 +43,26 @@
         ctx.font = '10px sans-serif';
         ctx.fillText('Lv' + (m.level || 1), ox + m.x * cell + 2, oy + (m.y + 1) * cell - 3);
       }
-      const hero = s.hero;
-      if (hero) {
-        ctx.fillStyle = COLORS.hero;
-        ctx.beginPath();
-        ctx.arc(ox + (hero.x + 0.5) * cell, oy + (hero.y + 0.5) * cell, cell * 0.32, 0, 7);
-        ctx.fill();
-        const w = hero.weapon || {};
-        const traits = (hero.traits || []).map((t) => t.name).join(', ') || '—';
+      const party = s.party || [];
+      const leader = party[0];
+      if (leader) {
+        // the party moves as a unit: one marker per member, fanned in the cell
+        party.forEach((m, i) => {
+          const dx = (i - (party.length - 1) / 2) * cell * 0.24;
+          ctx.fillStyle = COLORS.party[i % COLORS.party.length];
+          ctx.beginPath();
+          ctx.arc(ox + (leader.x + 0.5) * cell + dx, oy + (leader.y + 0.5) * cell, cell * 0.14, 0, 7);
+          ctx.fill();
+        });
         ctx.fillStyle = this.colors.text;
         ctx.font = '12px sans-serif';
-        const ench = w.enchant ? ' [' + w.enchant.name + ']' : '';
-        ctx.fillText('Dungeon D' + (s.difficulty || 5) + ' (gemessen ' + (s.levelDifficulty || 5) +
-          ') · HP ' + hero.hp + '/' + hero.max_hp + ' · XP ' + hero.xp +
-          ' · Gold ' + hero.gold + ' · ' + (w.name || '—') + ench + ' · ' + traits + ' · [E] verzaubern',
+        const members = party.map((m) => {
+          const w = m.weapon || {};
+          const ench = w.enchant ? ' [' + w.enchant.name + ']' : '';
+          return m.name + ' ' + m.hp + '/' + m.max_hp + ' HP · AC ' + (m.ac || 10) + ' · ' + (w.name || '—') + ench;
+        }).join('  |  ');
+        ctx.fillText('Dungeon D' + (s.difficulty || 5) + ' (gemessen ' + (s.levelDifficulty || 5) + ') · Gold ' +
+          (leader.gold || 0) + ' · ' + members + ' · [E] verzaubern',
           ox + 6, oy + size + 18);
       }
       ctx.fillStyle = COLORS.log;
