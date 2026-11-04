@@ -32,6 +32,26 @@ def client(tmp_path):
         yield c
 
 
+def test_schema_definitions_live_in_exactly_one_place(tmp_path):
+    """All CREATE TABLE/INDEX statements exist only in services/schema.py, the
+    created db contains exactly the tables defined there, and the savegame
+    service references the shared SAVEGAMES_TABLE constant."""
+    import inspect
+
+    from server.services import db as db_mod
+    from server.services import savegame as savegame_mod
+    from server.services import schema
+
+    assert "CREATE TABLE" not in inspect.getsource(db_mod), "db.py must not define tables"
+    conn = db_mod.connect(tmp_path / "games.db")
+    names = {r[0] for r in conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")} - {"sqlite_sequence"}
+    assert names == set(schema.TABLES), "db tables drifted from schema.TABLES"
+    assert schema.SAVEGAMES_TABLE in inspect.getsource(savegame_mod), \
+        "savegame service must reference SAVEGAMES_TABLE from schema.py"
+    conn.close()
+
+
 def test_sqlite_services_persist_across_instances(tmp_path):
     """Data really lives in tables: a fresh service instance over the same
     db file sees everything the previous one wrote."""

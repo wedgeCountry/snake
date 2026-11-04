@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .db import Db
+from .schema import SETTINGS_TABLE
 
 MIN_STEP_MS = 60
 MAX_STEP_MS = 400
@@ -27,7 +28,7 @@ class SqliteSettingsService:
 
     def _row(self, user_id: str) -> tuple[int, bool]:
         row = self._db.query_one(
-            "SELECT step_time_ms, torus FROM settings WHERE user_id = ?", (self._bucket(user_id),))
+            f"SELECT step_time_ms, torus FROM {SETTINGS_TABLE} WHERE user_id = ?", (self._bucket(user_id),))
         if row is None:
             return DEFAULT_STEP_MS, True
         return int(row["step_time_ms"]), bool(row["torus"])
@@ -43,9 +44,9 @@ class SqliteSettingsService:
         if "torus" in settings:
             torus = bool(settings["torus"])
         self._db.execute(
-            "INSERT INTO settings (user_id, step_time_ms, torus) VALUES (?, ?, ?) "
-            "ON CONFLICT(user_id) DO UPDATE SET step_time_ms = excluded.step_time_ms, "
-            "torus = excluded.torus",
+            f"INSERT INTO {SETTINGS_TABLE} (user_id, step_time_ms, torus) VALUES (?, ?, ?) "
+            f"ON CONFLICT(user_id) DO UPDATE SET step_time_ms = excluded.step_time_ms, "
+            f"torus = excluded.torus",
             (self._bucket(user_id), step, int(torus)))
         return self.get(user_id)
 
