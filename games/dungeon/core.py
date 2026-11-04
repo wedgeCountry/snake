@@ -20,7 +20,7 @@ from ..common.direction import Direction
 from ..common.grid_move import clamp2d
 from ..engine import GameState
 from .combat import enchant_weapon, make_legendary, make_party, random_trait, resolve_encounter
-from .config import LEGENDARY_TABLE, DungeonConfig
+from .config import LEGENDARY_TABLE, DungeonConfig, xp_needed_for_level
 from .levelgen import generate_level_with_target
 from .solver import ensure_level_beatable
 
@@ -190,6 +190,7 @@ class DungeonGame:
                 for member in state.party:
                     member["xp"] += cfg.xp_per_kill
                 leader["gold"] = leader.get("gold", 0) + 5
+                log.append(f"+{cfg.xp_per_kill} XP for the whole party")
             self._maybe_take_weapon(state, monster, cfg, log)
         state.combat_log = log[-COMBAT_LOG_LINES:]
         for m in state.monsters:
@@ -225,8 +226,8 @@ class DungeonGame:
 
     def _level_up(self, state: DungeonState, cfg: DungeonConfig) -> None:
         for member in state.party:
-            while member["xp"] >= cfg.xp_level_up and state.status == "running":
-                member["xp"] -= cfg.xp_level_up
+            while member["xp"] >= xp_needed_for_level(member["level"], cfg) and state.status == "running":
+                member["xp"] -= xp_needed_for_level(member["level"], cfg)
                 member["level"] += 1
                 member["attack"] += cfg.level_attack_bonus
                 member["max_hp"] += cfg.level_hp_bonus

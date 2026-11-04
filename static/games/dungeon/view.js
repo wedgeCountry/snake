@@ -15,9 +15,10 @@
       const maxHp = party.reduce((a, m) => a + (m.max_hp || 0), 0);
       this.dom.height.textContent = hp + '/' + maxHp + ' HP';
       if (this.dom.star) {
-        const gold = (party[0] && party[0].gold) || 0;
+        const leader = party[0] || {};
         this.dom.star.style.display = '';
-        this.dom.star.textContent = 'Lv ' + (party[0] ? party[0].level : 1) + ' · Gold ' + gold + ' · [E] verzaubern';
+        this.dom.star.textContent = 'Lv ' + (leader.level || 1) + ' · XP ' + (leader.xp || 0) +
+          '/' + (leader.xpNeeded || '?') + ' · Gold ' + (leader.gold || 0) + ' · [E] verzaubern';
       }
     }
 
@@ -66,7 +67,8 @@
           return m.name + ' ' + m.hp + '/' + m.max_hp + ' HP · AC ' + (m.ac || 10) + ' · ' + (w.name || '—') + ench;
         }).join('  |  ');
         ctx.fillText('Dungeon D' + (s.difficulty || 5) + ' (gemessen ' + (s.levelDifficulty || 5) + ') · Gold ' +
-          (leader.gold || 0) + ' · ' + members + ' · [E] verzaubern',
+          (leader.gold || 0) + ' · XP ' + (leader.xp || 0) + '/' + (leader.xpNeeded || '?') +
+          ' · ' + members + ' · [E] verzaubern',
           ox + 6, oy + size + 18);
       }
       ctx.fillStyle = COLORS.log;

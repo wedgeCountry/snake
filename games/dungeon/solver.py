@@ -22,7 +22,7 @@ import random
 from dataclasses import dataclass
 
 from .combat import make_monster, make_party_at_level
-from .config import DungeonConfig
+from .config import DungeonConfig, xp_needed_for_level
 from .levelgen import _dps, generate_level_with_target, hit_probability
 
 DIRS = {"left": (-1, 0), "right": (1, 0), "up": (0, -1), "down": (0, 1)}
@@ -68,9 +68,10 @@ def _expected_duel(party: list[dict], monster: dict, cfg: DungeonConfig) -> tupl
 def _apply_level_ups(hps: tuple[float, ...], level: int, xp: int,
                      cfg: DungeonConfig) -> tuple[tuple[float, ...], int, int]:
     """Mirror of the core's level-up (all members share xp, so they share the
-    level): on level-up every member is fully healed to its new max_hp."""
-    while xp >= cfg.xp_level_up:
-        xp -= cfg.xp_level_up
+    level, with the scaling XP curve): on level-up every member is fully
+    healed to its new max_hp."""
+    while xp >= xp_needed_for_level(level, cfg):
+        xp -= xp_needed_for_level(level, cfg)
         level += 1
         fresh = make_party_at_level(cfg, level)
         hps = tuple(float(m["max_hp"]) for m in fresh)

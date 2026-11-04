@@ -116,7 +116,10 @@ def test_prove_playable_reports_difficulty_and_party_level():
 def test_minimal_party_level_is_the_lowest_beatable_level():
     cfg = _cfg(boss_level=10)
     result = minimal_party_level(10, seed=2, cfg=cfg, max_nodes=100_000)
-    assert result["playable"] and result["minimalPartyLevel"] == 2
+    # with the scaling XP curve a fresh party levels slower, so the minimum
+    # is above 1 — the exact value depends on the curve, what matters is the
+    # property: it is playable at the minimum and unprovable one level below
+    assert result["playable"] and result["minimalPartyLevel"] >= 2
     # the same generated level is used for every party level (same seed), and
     # party stats grow monotonically with level, so the level below the minimum
     # must be unprovable

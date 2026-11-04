@@ -8,7 +8,7 @@ import random
 import pytest
 
 from games.dungeon.combat import make_party, resolve_encounter, strike
-from games.dungeon.config import DungeonConfig
+from games.dungeon.config import DungeonConfig, xp_needed_for_level
 from games.dungeon.core import DungeonGame
 
 FISTS = {"name": "Fists", "die": 4, "bonus": 0}
@@ -248,6 +248,40 @@ def test_level_is_static_after_generation():
              sorted(st.potions))
     assert st.status == "running"
     assert before == after, "the level stayed static for 80 ticks"
+
+
+def test_each_new_level_needs_more_xp():
+    cfg = _cfg()
+    # geometric curve: 30, 45, 67, 101, ...
+    assert xp_needed_for_level(1, cfg) == 30
+    assert xp_needed_for_level(2, cfg) == 45
+    assert xp_needed_for_level(3, cfg) == 67
+    levels = [xp_needed_for_level(l, cfg) for l in range(1, 8)]
+    assert levels == sorted(levels) and len(set(levels)) == len(levels), "strictly increasing"
+    # in-game: 44 XP at level 2 is not enough, 45 XP levels up to 3
+    g = _game()
+    s = _open_field(g, ScriptedRng(randoms=[0.99]))
+    for m in s.party:
+        m["level"] = 2
+        m["xp"] = 44
+    g.apply_action(0, {"direction": "right"})
+    g.tick()
+    assert all(m["level"] == 2 and m["xp"] == 44 for m in g.state().party), "below the threshold"
+    for m in g.state().party:
+        m["xp"] = 45
+    g.apply_action(0, {"direction": "down"})
+    g.tick()
+    assert all(m["level"] == 3 and m["xp"] == 0 for m in g.state().party), "exactly the threshold levels up"
+
+
+def test_kill_logs_the_xp_gain():
+    g = _game()
+    rng = ScriptedRng(rands=[10, 9, 8, 1, 20, 8, 8], randoms=[0.99])
+    s = _open_field(g, rng)
+    s.monsters.append(_monster(1, 0, hp=4))
+    g.apply_action(0, {"direction": "right"})
+    g.tick()
+    assert any("+10 XP" in line for line in g.state().combat_log)
 
 
 def test_no_input_means_no_movement_one_tile_per_command():
