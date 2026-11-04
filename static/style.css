@@ -157,3 +157,42 @@ body.no-game .game-select { display: flex; }
 /* No game selected yet: only the select menu (and the small picker) are visible */
 body.no-game .hud, body.no-game .legend, body.no-game .controls { display: none; }
 body.no-game #overlay { display: none; }
+body.no-game .dungeon-stats-btn, body.no-game .dungeon-panel { display: none; }
+
+/* Dungeon game: stats button + details panel (created by the dungeon view) */
+.dungeon-stats-btn {
+  position: fixed;
+  bottom: calc(58px + env(safe-area-inset-bottom));
+  right: 12px;
+  z-index: 12;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid #b39dff66;
+  background: rgba(24, 16, 44, .75);
+  color: #b39dff;
+  font-size: 13px;
+  letter-spacing: .5px;
+  cursor: pointer;
+}
+.dungeon-panel {
+  position: fixed;
+  top: calc(44px + env(safe-area-inset-top));
+  right: 12px;
+  bottom: calc(96px + env(safe-area-inset-bottom));
+  width: min(300px, 80vw);
+  overflow-y: auto;
+  z-index: 11;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #4a3670;
+  background: rgba(16, 10, 28, .92);
+  color: #e8ecff;
+  font-size: 13px;
+}
+.dungeon-panel.hidden { display: none; }
+.dungeon-panel h2 { margin: 0 0 4px; font-size: 15px; }
+.dungeon-panel h3 { margin: 10px 0 4px; font-size: 13px; }
+.dungeon-panel p { margin: 0 0 4px; color: #8fa3d9; }
+.dungeon-panel table.dungeon-stats { border-collapse: collapse; width: 100%; }
+.dungeon-panel table.dungeon-stats td { padding: 1px 6px 1px 0; color: #c9d2f5; vertical-align: top; }
+.dungeon-panel table.dungeon-stats td:first-child { color: #8fa3d9; white-space: nowrap; }
