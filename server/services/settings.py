@@ -1,9 +1,14 @@
+"""Per-user settings stored in the settings SQLite table (one row per user).
+
+Platform-wide step-time clamps (the speed slider is generic across games)."""
+
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-# platform-wide step-time clamps (the speed slider is generic across games)
+from .db import Db
+from .schema import SETTINGS_TABLE
+
 MIN_STEP_MS = 60
 MAX_STEP_MS = 400
 DEFAULT_STEP_MS = 260
@@ -11,40 +16,43 @@ DEFAULT_STEP_MS = 260
 ANONYMOUS_USER_ID = "anonymous"
 
 
-class JsonFileSettingsService:
-    """Per-user settings keyed by user_id, persisted to a JSON file.
-    The anonymous default is used when no user id is known."""
+class SqliteSettingsService:
+    """Per-user settings keyed by user_id. The anonymous default is used when
+    no user id is known."""
 
-    def __init__(self, path: Path) -> None:
-        self._path = path
-        self._data = self._load()
+    def __init__(self, db_path: Path) -> None:
+        self._db = Db(db_path)
 
-    def _load(self) -> dict:
-        try:
-            data = json.loads(self._path.read_text())
-            return data if isinstance(data, dict) else {}
-        except (OSError, ValueError, json.JSONDecodeError):
-            return {}
+    def _bucket(self, user_id: str) -> str:
+        return user_id or ANONYMOUS_USER_ID
 
-    def _save(self) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(self._data))
-
-    def _bucket(self, user_id: str) -> dict:
-        return self._data.setdefault(user_id or ANONYMOUS_USER_ID, {})
+    def _row(self, user_id: str) -> tuple[int, bool]:
+        row = self._db.query_one(
+            f"SELECT step_time_ms, torus FROM {SETTINGS_TABLE} WHERE user_id = ?", (self._bucket(user_id),))
+        if row is None:
+            return DEFAULT_STEP_MS, True
+        return int(row["step_time_ms"]), bool(row["torus"])
 
     def get(self, user_id: str) -> dict:
-        return dict(self._bucket(user_id))
+        step, torus = self._row(user_id)
+        return {"stepTimeMs": step, "torus": torus}
 
     def set(self, user_id: str, settings: dict) -> dict:
-        bucket = self._bucket(user_id)
-        bucket.update(settings)
-        self._save()
-        return dict(bucket)
+        step, torus = self._row(user_id)
+        if "stepTimeMs" in settings:
+            step = int(settings["stepTimeMs"])
+        if "torus" in settings:
+            torus = bool(settings["torus"])
+        self._db.execute(
+            f"INSERT INTO {SETTINGS_TABLE} (user_id, step_time_ms, torus) VALUES (?, ?, ?) "
+            f"ON CONFLICT(user_id) DO UPDATE SET step_time_ms = excluded.step_time_ms, "
+            f"torus = excluded.torus",
+            (self._bucket(user_id), step, int(torus)))
+        return self.get(user_id)
 
     def get_step_time_ms(self, user_id: str) -> int:
-        v = self._bucket(user_id).get("stepTimeMs", DEFAULT_STEP_MS)
-        return int(min(MAX_STEP_MS, max(MIN_STEP_MS, v)))
+        step, _ = self._row(user_id)
+        return int(min(MAX_STEP_MS, max(MIN_STEP_MS, step)))
 
     def set_step_time_ms(self, user_id: str, value: int) -> int:
         v = int(min(MAX_STEP_MS, max(MIN_STEP_MS, value)))
@@ -52,7 +60,8 @@ class JsonFileSettingsService:
         return v
 
     def get_torus(self, user_id: str) -> bool:
-        return bool(self._bucket(user_id).get("torus", True))
+        _, torus = self._row(user_id)
+        return torus
 
     def set_torus(self, user_id: str, enabled: bool) -> bool:
         self.set(user_id, {"torus": bool(enabled)})

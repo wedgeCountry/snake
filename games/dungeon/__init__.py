@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import random
 
 from ..engine import Game
@@ -18,14 +19,17 @@ def _serialize(state) -> dict:
         return {}
     return {
         "gridSize": state.grid_size,
-        "hero": dict(state.hero),
-        "monsters": [dict(m) for m in state.monsters],
+        "hero": copy.deepcopy(state.hero),
+        "monsters": [copy.deepcopy(m) for m in state.monsters],
         "potions": [list(p) for p in state.potions],
         "score": state.score,
         "turn": state.turn,
         "maxTurns": state.max_turns,
         "status": state.status,
         "stepTimeMs": state.step_time_ms,
+        "combatLog": list(state.combat_log),
+        "difficulty": state.difficulty,
+        "levelDifficulty": state.level_difficulty,
     }
 
 

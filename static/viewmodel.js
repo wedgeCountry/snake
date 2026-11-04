@@ -63,6 +63,31 @@ window.GameViewModel = class GameViewModel {
     Promise.resolve(this.api.sendAction(this.gameId, player || 0, { direction: name })).catch(() => {});
   }
 
+  enchant(school) {
+    if (!this.running) return;
+    Promise.resolve(this.api.sendAction(this.gameId, 0, { enchant: school || '' })).catch(() => {});
+  }
+
+  async saveGame(name) {
+    return this.api.saveGame(this.gameId, name || '');
+  }
+
+  async listSavegames() {
+    const r = await this.api.listSavegames(this.gameId);
+    return r.savegames || [];
+  }
+
+  async loadGame(saveId) {
+    const env = await this.api.loadGame(this.gameId, saveId);
+    this._stopTransport();
+    this._apply(env);
+    this.running = env.status === 'running';
+    this.started = true;
+    this._startTransport();
+    this.onStateChange();
+    return env;
+  }
+
   async toggleMode() {
     this.mode = this.mode === 'single' ? 'multi' : 'single';
     await this.start(this.mode);

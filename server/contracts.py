@@ -83,6 +83,20 @@ class SettingsService(Protocol):
     def get_torus(self, user_id: str) -> bool: ...
 
 
+class SavegameService(Protocol):
+    """Savegames scoped per user: save/list/get/delete. `state` is the game's
+    serialized wire state (JSON blob); loading restores it into a fresh session
+    via the game's optional `restore()` method."""
+
+    def save(self, user_id: str, game_id: str, mode: str, name: str, state: dict) -> dict: ...
+
+    def list(self, user_id: str, game_id: str) -> list[dict]: ...
+
+    def get(self, user_id: str, save_id: int) -> dict | None: ...  # includes "state"
+
+    def delete(self, user_id: str, save_id: int) -> bool: ...
+
+
 class Transport(Protocol):
     """Real-time seam behind the API layer: poll() vs subscribe()."""
 

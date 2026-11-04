@@ -8,9 +8,10 @@ from fastapi.testclient import TestClient
 from games.registry import get as get_game_info, list_games
 from server.app import app
 from server.contracts import SESSION_COOKIE
-from server.services.leaderboard import JsonFileLeaderboardService
-from server.services.score import JsonFileScoreService
-from server.services.settings import JsonFileSettingsService
+from server.services.leaderboard import SqliteLeaderboardService
+from server.services.savegame import SqliteSavegameService
+from server.services.score import SqliteScoreService
+from server.services.settings import SqliteSettingsService
 from server.services.user import COOKIE_NAME, CookieUserService
 from server.session import InMemorySessionService
 
@@ -18,17 +19,18 @@ from server.session import InMemorySessionService
 @pytest.fixture()
 def client(tmp_path):
     app.state.session_service = InMemorySessionService()
-    app.state.score_service = JsonFileScoreService(tmp_path / "scores.json")
-    app.state.settings_service = JsonFileSettingsService(tmp_path / "settings.json")
+    app.state.score_service = SqliteScoreService(tmp_path / "games.db")
+    app.state.settings_service = SqliteSettingsService(tmp_path / "games.db")
     app.state.user_service = CookieUserService()
-    app.state.leaderboard_service = JsonFileLeaderboardService(tmp_path / "leaderboard.json")
+    app.state.leaderboard_service = SqliteLeaderboardService(tmp_path / "games.db")
+    app.state.savegame_service = SqliteSavegameService(tmp_path / "games.db")
     app.state.session_loops = {}
     with TestClient(app) as c:
         yield c
 
 
 def test_leaderboard_bests_aggregates_across_games(tmp_path):
-    lb = JsonFileLeaderboardService(tmp_path / "leaderboard.json")
+    lb = SqliteLeaderboardService(tmp_path / "games.db")
     lb.submit("u1", "snake", "single", 100)
     lb.submit("u1", "snake", "multi", 20)
     lb.submit("u1", "territory", "single", 55)

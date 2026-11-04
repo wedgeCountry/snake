@@ -71,7 +71,7 @@ def test_session_create_uses_registry_factory():
 def test_expiry_cancels_and_removes_session_loop():
     import asyncio
     from server.session import SessionLoop
-    from server.services.score import JsonFileScoreService
+    from server.services.score import SqliteScoreService
     import tempfile, pathlib
     now = [1000.0]
     removed = []
@@ -81,7 +81,7 @@ def test_expiry_cancels_and_removes_session_loop():
     session = sessions.get(sid)
     session.game.state().step_time_ms = 5
     loops = {}
-    loop = SessionLoop(session, JsonFileScoreService(pathlib.Path(tempfile.mkdtemp()) / "s.json"))
+    loop = SessionLoop(session, SqliteScoreService(pathlib.Path(tempfile.mkdtemp()) / "games.db"))
     loops[sid] = loop
     session.game.state().status = "running"
 
@@ -102,7 +102,7 @@ def test_expiry_cancels_and_removes_session_loop():
 def test_loop_removes_itself_on_natural_termination():
     import asyncio
     from server.session import SessionLoop
-    from server.services.score import JsonFileScoreService
+    from server.services.score import SqliteScoreService
     import tempfile, pathlib
     from games.snake.models import Cell, Direction
     game = make_service()
@@ -119,7 +119,7 @@ def test_loop_removes_itself_on_natural_termination():
     sid = sessions.create("snake", "u1", "single")
     session = sessions.get(sid)
     session.game = game
-    loop = SessionLoop(session, JsonFileScoreService(pathlib.Path(tempfile.mkdtemp()) / "s.json"),
+    loop = SessionLoop(session, SqliteScoreService(pathlib.Path(tempfile.mkdtemp()) / "games.db"),
                        on_finished=lambda: finished.append(True))
 
     async def run():

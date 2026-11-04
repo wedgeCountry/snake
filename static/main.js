@@ -110,7 +110,10 @@
     } else {
       window.addEventListener('keydown', (e) => {
         const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
-        if (map[e.key]) { e.preventDefault(); vm.running ? vm.queueDirection(map[e.key]) : startIfNeeded(); }
+        if (map[e.key]) { e.preventDefault(); vm.running ? vm.queueDirection(map[e.key]) : startIfNeeded(); return; }
+        if (e.key === 'e' && vm.running) vm.enchant(''); // enchant weapon (default school)
+        if (e.key === 's' && vm.running) vm.saveGame('').catch(() => {}); // savegame
+        if (e.key === 'l') vm.listSavegames().then((l) => { if (l.length) vm.loadGame(l[0].id).catch(() => {}); }).catch(() => {}); // load latest
       });
     }
 

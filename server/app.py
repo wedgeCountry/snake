@@ -31,13 +31,15 @@ from .contracts import (
 from .dependencies import (
     build_services,
     get_leaderboard_service,
+    get_savegame_service,
     get_score_service,
     get_session,
     get_session_service,
     get_settings_service,
     get_user_service,
 )
-from .schemas import ActionRequest, NewGameRequest, SettingsRequest
+from .schemas import ActionRequest, NewGameRequest, SaveRequest, SettingsRequest
+from .contracts import SavegameService
 from .services.user import COOKIE_NAME
 from .session import InMemorySessionService, SessionLoop
 
@@ -58,13 +60,14 @@ def _make_session_service(app_state) -> InMemorySessionService:
 @asynccontextmanager
 async def lifespan(fastapi_app: FastAPI):
     if not hasattr(fastapi_app.state, "session_service"):
-        score, settings, user, leaderboard = build_services()
+        score, settings, user, leaderboard, savegames = build_services()
         fastapi_app.state.session_loops = {}
         fastapi_app.state.session_service = _make_session_service(fastapi_app.state)
         fastapi_app.state.score_service = score
         fastapi_app.state.settings_service = settings
         fastapi_app.state.user_service = user
         fastapi_app.state.leaderboard_service = leaderboard
+        fastapi_app.state.savegame_service = savegames
     yield
     for loop in list(fastapi_app.state.session_loops.values()):
         await loop.stop()
@@ -174,6 +177,84 @@ def api_action(
     _session_for_game(session, game_id)
     session.game.apply_action(req.player, {**req.action, "player": req.player})
     return {"ok": True}
+
+
+@app.post("/api/games/{game_id}/save")
+def api_save_game(
+    game_id: str,
+    req: SaveRequest,
+    request: Request,
+    session: Any = Depends(get_session),
+    savegames: SavegameService = Depends(get_savegame_service),
+    user: UserService = Depends(get_user_service),
+) -> JSONResponse:
+    """Persist the active session's serialized state as a savegame."""
+    _session_for_game(session, game_id)
+    user_id, is_new = _resolve_user(request, user)
+    state = get_game_info(game_id).serialize(session.game.state())
+    sg = savegames.save(user_id, game_id, session.mode, req.name, state)
+    response = JSONResponse(sg)
+    if is_new:
+        response.set_cookie(COOKIE_NAME, user_id, max_age=365 * 24 * 3600, httponly=True, samesite="lax")
+    return response
+
+
+@app.get("/api/games/{game_id}/savegames")
+def api_list_savegames(
+    game_id: str,
+    request: Request,
+    savegames: SavegameService = Depends(get_savegame_service),
+    user: UserService = Depends(get_user_service),
+) -> dict:
+    user_id, _ = _resolve_user(request, user)
+    return {"gameId": game_id, "savegames": savegames.list(user_id, game_id)}
+
+
+@app.delete("/api/games/{game_id}/savegames/{save_id}")
+def api_delete_savegame(
+    game_id: str,
+    save_id: int,
+    request: Request,
+    savegames: SavegameService = Depends(get_savegame_service),
+    user: UserService = Depends(get_user_service),
+) -> dict:
+    user_id, _ = _resolve_user(request, user)
+    if not savegames.delete(user_id, save_id):
+        raise HTTPException(status_code=404, detail="savegame not found")
+    return {"ok": True}
+
+
+@app.post("/api/games/{game_id}/load/{save_id}")
+async def api_load_savegame(
+    game_id: str,
+    save_id: int,
+    request: Request,
+    sessions: SessionService = Depends(get_session_service),
+    score: ScoreService = Depends(get_score_service),
+    settings: SettingsService = Depends(get_settings_service),
+    user: UserService = Depends(get_user_service),
+    leaderboard: LeaderboardService = Depends(get_leaderboard_service),
+    savegames: SavegameService = Depends(get_savegame_service),
+) -> JSONResponse:
+    """Restore a savegame into a fresh session and resume its loop."""
+    get_game_info(game_id)
+    user_id, is_new = _resolve_user(request, user)
+    sg = savegames.get(user_id, save_id)
+    if sg is None or sg["gameId"] != game_id:
+        raise HTTPException(status_code=404, detail="savegame not found")
+    session_id = sessions.create(game_id, user_id, sg.get("mode") or "single")
+    session = sessions.get(session_id)
+    restore = getattr(session.game, "restore", None)
+    if restore is None:
+        sessions.drop(session_id)
+        raise HTTPException(status_code=422, detail=f"{game_id} does not support savegames")
+    restore(sg["state"])
+    loops = request.app.state.session_loops
+    loop = SessionLoop(session, score, leaderboard, on_finished=lambda: loops.pop(session_id, None))
+    loops[session_id] = loop
+    await loop.start()
+    body = _envelope_for(session, user_id, score, settings, leaderboard)
+    return _with_cookies(JSONResponse(body), user_id, is_new, session_id, True)
 
 
 @app.post("/api/settings")
