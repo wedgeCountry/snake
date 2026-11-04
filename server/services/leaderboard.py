@@ -1,66 +1,51 @@
+"""Per-user maximum scores per game and mode, stored in the leaderboard
+SQLite table (one row per player/game/mode, upserted to the max)."""
+
 from __future__ import annotations
 
-import json
 from pathlib import Path
+
+from .db import Db
 
 MODES = ("single", "multi")
 
 
-class JsonFileLeaderboardService:
-    """Per-user maximum scores per game and mode, persisted to a JSON file,
-    cached in memory."""
+class SqliteLeaderboardService:
+    def __init__(self, db_path: Path) -> None:
+        self._db = Db(db_path)
 
-    def __init__(self, path: Path) -> None:
-        self._path = path
-        self._boards = self._read()
-
-    def _empty(self) -> dict:
-        return {}
-
-    def _read(self) -> dict:
-        try:
-            data = json.loads(self._path.read_text())
-            if not isinstance(data, dict):
-                return {}
-            return {
-                str(game_id): {
-                    str(mode): {str(u): int(s) for u, s in users.items()}
-                    for mode, users in modes.items() if isinstance(users, dict)
-                }
-                for game_id, modes in data.items() if isinstance(modes, dict)
-            }
-        except (OSError, ValueError, json.JSONDecodeError):
-            return {}
-
-    def _save(self) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(self._boards))
-
-    def _board(self, game_id: str, mode: str) -> dict:
+    def _check_mode(self, mode: str) -> None:
         if mode not in MODES:
             raise ValueError(f"unknown mode: {mode}")
-        return self._boards.setdefault(game_id, {}).setdefault(mode, {})
 
     def submit(self, user_id: str, game_id: str, mode: str, score: int) -> int:
-        board = self._board(game_id, mode)
-        best = max(board.get(user_id, 0), score)
-        board[user_id] = best
-        self._save()
+        self._check_mode(mode)
+        best = max(self.get_best(user_id, game_id, mode), score)
+        self._db.execute(
+            "INSERT INTO leaderboard (player_id, game_id, mode, score) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(player_id, game_id, mode) DO UPDATE SET score = excluded.score",
+            (user_id, game_id, mode, best))
         return best
 
     def get_best(self, user_id: str, game_id: str, mode: str) -> int:
-        return self._board(game_id, mode).get(user_id, 0)
+        self._check_mode(mode)
+        row = self._db.query_one(
+            "SELECT score FROM leaderboard WHERE player_id = ? AND game_id = ? AND mode = ?",
+            (user_id, game_id, mode))
+        return int(row["score"]) if row else 0
 
     def top(self, game_id: str, mode: str, limit: int = 10) -> list[dict]:
-        board = self._board(game_id, mode)
-        entries = sorted(board.items(), key=lambda kv: kv[1], reverse=True)
-        return [{"userId": uid, "score": score} for uid, score in entries[:limit]]
+        self._check_mode(mode)
+        rows = self._db.query(
+            "SELECT player_id, score FROM leaderboard WHERE game_id = ? AND mode = ? "
+            "ORDER BY score DESC, player_id LIMIT ?", (game_id, mode, limit))
+        return [{"userId": r["player_id"], "score": int(r["score"])} for r in rows]
 
     def bests(self, user_id: str) -> dict:
         """Cross-game profile: this user's best score per game and mode."""
+        rows = self._db.query(
+            "SELECT game_id, mode, score FROM leaderboard WHERE player_id = ?", (user_id,))
         out: dict = {}
-        for game_id, modes in self._boards.items():
-            per_mode = {mode: users[user_id] for mode, users in modes.items() if user_id in users}
-            if per_mode:
-                out[game_id] = per_mode
+        for r in rows:
+            out.setdefault(r["game_id"], {})[r["mode"]] = int(r["score"])
         return out

@@ -1,32 +1,24 @@
+"""Best-score bookkeeping per game, stored in the scores SQLite table."""
+
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
+from .db import Db
 
-class JsonFileScoreService:
-    """Best-score bookkeeping per game, persisted to a JSON file, cached in memory."""
 
-    def __init__(self, path: Path) -> None:
-        self._path = path
-        self._best = self._read()
-
-    def _read(self) -> dict[str, int]:
-        try:
-            data = json.loads(self._path.read_text())
-            return {str(k): int(v) for k, v in data.items()} if isinstance(data, dict) else {}
-        except (OSError, ValueError, json.JSONDecodeError):
-            return {}
-
-    def _save(self) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(self._best))
+class SqliteScoreService:
+    def __init__(self, db_path: Path) -> None:
+        self._db = Db(db_path)
 
     def get_best(self, game_id: str) -> int:
-        return self._best.get(game_id, 0)
+        row = self._db.query_one("SELECT score FROM scores WHERE game_id = ?", (game_id,))
+        return int(row["score"]) if row else 0
 
     def submit(self, game_id: str, score: int) -> int:
-        best = max(self._best.get(game_id, 0), score)
-        self._best[game_id] = best
-        self._save()
+        best = max(self.get_best(game_id), score)
+        self._db.execute(
+            "INSERT INTO scores (game_id, score) VALUES (?, ?) "
+            "ON CONFLICT(game_id) DO UPDATE SET score = excluded.score",
+            (game_id, best))
         return best

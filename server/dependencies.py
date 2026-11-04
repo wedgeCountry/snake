@@ -1,5 +1,6 @@
 """Dependency providers. Services live on app.state (set in the lifespan);
-tests replace them directly on app.state. Sessions are resolved from the
+tests replace them directly on app.state. All persistent services share one
+SQLite database file (data/games.db). Sessions are resolved from the
 session cookie."""
 
 from __future__ import annotations
@@ -12,25 +13,30 @@ from typing import Any
 from .contracts import (
     SESSION_COOKIE,
     LeaderboardService,
+    SavegameService,
     ScoreService,
     SessionService,
     SettingsService,
     UserService,
 )
-from .services.leaderboard import JsonFileLeaderboardService
-from .services.score import JsonFileScoreService
-from .services.settings import JsonFileSettingsService
+from .services.leaderboard import SqliteLeaderboardService
+from .services.savegame import SqliteSavegameService
+from .services.score import SqliteScoreService
+from .services.settings import SqliteSettingsService
 from .services.user import CookieUserService
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DB_PATH = DATA_DIR / "games.db"
 
 
 def build_services(data_dir: Path = DATA_DIR):
-    score: ScoreService = JsonFileScoreService(data_dir / "scores.json")
-    settings: SettingsService = JsonFileSettingsService(data_dir / "settings.json")
+    db = data_dir / "games.db"
+    score: ScoreService = SqliteScoreService(db)
+    settings: SettingsService = SqliteSettingsService(db)
     user: UserService = CookieUserService()
-    leaderboard: LeaderboardService = JsonFileLeaderboardService(data_dir / "leaderboard.json")
-    return score, settings, user, leaderboard
+    leaderboard: LeaderboardService = SqliteLeaderboardService(db)
+    savegames: SavegameService = SqliteSavegameService(db)
+    return score, settings, user, leaderboard, savegames
 
 
 def get_session_service(request: Request) -> SessionService:
@@ -61,3 +67,7 @@ def get_user_service(request: Request) -> UserService:
 
 def get_leaderboard_service(request: Request) -> LeaderboardService:
     return request.app.state.leaderboard_service
+
+
+def get_savegame_service(request: Request) -> SavegameService:
+    return request.app.state.savegame_service

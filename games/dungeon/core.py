@@ -6,6 +6,7 @@ the pipeline Game protocol."""
 
 from __future__ import annotations
 
+import copy
 import random
 from typing import Any
 
@@ -84,6 +85,24 @@ class DungeonGame:
         if self._state is None:
             return self.init()
         return self._state
+
+    def restore(self, data: dict) -> None:
+        """Restore a savegame (wire-format state dict from the serializer)."""
+        hero = copy.deepcopy(data["hero"])
+        monsters = [copy.deepcopy(m) for m in data.get("monsters", [])]
+        potions = [tuple(p) for p in data.get("potions", [])]
+        self._state = DungeonState(
+            int(data["gridSize"]), hero, monsters, potions,
+            int(data.get("score", 0)), int(data.get("turn", 0)),
+            int(data.get("maxTurns", self._config.max_turns)),
+            status=str(data.get("status", "running")),
+            step_time_ms=int(data.get("stepTimeMs", self._config.step_time_ms)),
+            combat_log=list(data.get("combatLog", [])),
+            difficulty=int(data.get("difficulty", 5)),
+            level_difficulty=float(data.get("levelDifficulty", 5.0)),
+        )
+        self._queue.clear()
+        self._last = Direction(1, 0, 0)
 
     def max_players(self) -> int:
         return 1

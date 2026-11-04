@@ -21,6 +21,10 @@ window.ApiClient = (function () {
     sendAction: (gameId, player, action) => post('/api/games/' + gameId + '/action', { player, action }),
     getLeaderboard: (gameId, mode) => request('/api/leaderboard/' + gameId + '/' + (mode || 'single')),
     setSettings: (s) => post('/api/settings', s),
+    saveGame: (gameId, name) => post('/api/games/' + gameId + '/save', { name: name || '' }),
+    listSavegames: (gameId) => request('/api/games/' + gameId + '/savegames'),
+    loadGame: (gameId, saveId) => post('/api/games/' + gameId + '/load/' + saveId, {}),
+    deleteSavegame: (gameId, saveId) => request('/api/games/' + gameId + '/savegames/' + saveId, { method: 'DELETE' }),
     poll: (gameId) => request('/api/games/' + gameId + '/state'),
     subscribe: (gameId, sessionId, onEnvelope) => {
       const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';

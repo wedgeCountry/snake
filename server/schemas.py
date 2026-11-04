@@ -18,3 +18,7 @@ class ActionRequest(BaseModel):
 class SettingsRequest(BaseModel):
     step_time_ms: int | None = Field(default=None, ge=60, le=400)
     torus: bool | None = None
+
+
+class SaveRequest(BaseModel):
+    name: str = ""

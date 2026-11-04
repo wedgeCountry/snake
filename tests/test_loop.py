@@ -8,7 +8,7 @@ from games.snake.config import SnakeConfig
 from games.snake.core import SnakeGame
 from games.snake.dto import SnakeStateDTO
 from games.snake.models import Cell, Direction
-from server.services.score import JsonFileScoreService
+from server.services.score import SqliteScoreService
 from server.session import InMemorySessionService, SessionLoop
 
 
@@ -62,7 +62,7 @@ def test_direction_queue_capped():
 
 def test_loop_steps_while_active(tmp_path: Path):
     game = make_game()
-    score = JsonFileScoreService(tmp_path / "scores.json")
+    score = SqliteScoreService(tmp_path / "games.db")
     session = make_session(game, score)
     loop = SessionLoop(session, score)
     game.state().step_time_ms = 5
@@ -78,7 +78,7 @@ def test_loop_steps_while_active(tmp_path: Path):
 
 def test_loop_step_with_action(tmp_path: Path):
     game = make_game()
-    score = JsonFileScoreService(tmp_path / "scores.json")
+    score = SqliteScoreService(tmp_path / "games.db")
     session = make_session(game, score)
     loop = SessionLoop(session, score)
     loop.step({"direction": "up", "player": 0})
@@ -88,7 +88,7 @@ def test_loop_step_with_action(tmp_path: Path):
 
 def test_loop_step_without_action(tmp_path: Path):
     game = make_game()
-    score = JsonFileScoreService(tmp_path / "scores.json")
+    score = SqliteScoreService(tmp_path / "games.db")
     session = make_session(game, score)
     loop = SessionLoop(session, score)
     loop.step(None)
@@ -98,7 +98,7 @@ def test_loop_step_without_action(tmp_path: Path):
 
 def test_loop_step_rejects_invalid_action(tmp_path: Path):
     game = make_game()
-    score = JsonFileScoreService(tmp_path / "scores.json")
+    score = SqliteScoreService(tmp_path / "games.db")
     session = make_session(game, score)
     loop = SessionLoop(session, score)
     import pytest
@@ -131,7 +131,7 @@ def test_loop_submits_score_on_death(tmp_path: Path):
     state.food = Cell(0, 0, 0)
     state.score = 30
     state.step_time_ms = 5
-    score = JsonFileScoreService(tmp_path / "scores.json")
+    score = SqliteScoreService(tmp_path / "games.db")
     session = make_session(game, score)
     loop = SessionLoop(session, score)
 

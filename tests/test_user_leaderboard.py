@@ -8,9 +8,9 @@ import pytest
 from games.snake.config import SnakeConfig
 from games.snake.core import SnakeGame
 from games.snake.models import Cell, Direction
-from server.services.leaderboard import JsonFileLeaderboardService
-from server.services.score import JsonFileScoreService
-from server.services.settings import JsonFileSettingsService
+from server.services.leaderboard import SqliteLeaderboardService
+from server.services.score import SqliteScoreService
+from server.services.settings import SqliteSettingsService
 from server.services.user import COOKIE_NAME, CookieUserService
 from server.session import InMemorySessionService, SessionLoop
 
@@ -29,7 +29,7 @@ def test_resolve_keeps_existing_cookie():
 
 
 def test_settings_are_independent_per_user(tmp_path: Path):
-    s = JsonFileSettingsService(tmp_path / "settings.json")
+    s = SqliteSettingsService(tmp_path / "games.db")
     s.set_step_time_ms("u1", 100)
     s.set_torus("u2", False)
     assert s.get_step_time_ms("u1") == 100
@@ -40,7 +40,7 @@ def test_settings_are_independent_per_user(tmp_path: Path):
 
 
 def test_score_service_keyed_by_game(tmp_path: Path):
-    svc = JsonFileScoreService(tmp_path / "scores.json")
+    svc = SqliteScoreService(tmp_path / "games.db")
     assert svc.submit("snake", 30) == 30
     assert svc.submit("other", 99) == 99
     assert svc.get_best("snake") == 30
@@ -49,7 +49,7 @@ def test_score_service_keyed_by_game(tmp_path: Path):
 
 
 def test_leaderboard_submit_keeps_max_per_user(tmp_path: Path):
-    lb = JsonFileLeaderboardService(tmp_path / "leaderboard.json")
+    lb = SqliteLeaderboardService(tmp_path / "games.db")
     assert lb.submit("u1", "snake", "single", 30) == 30
     assert lb.submit("u1", "snake", "single", 10) == 30
     assert lb.submit("u1", "snake", "single", 50) == 50
@@ -58,7 +58,7 @@ def test_leaderboard_submit_keeps_max_per_user(tmp_path: Path):
 
 
 def test_leaderboard_boards_are_independent(tmp_path: Path):
-    lb = JsonFileLeaderboardService(tmp_path / "leaderboard.json")
+    lb = SqliteLeaderboardService(tmp_path / "games.db")
     lb.submit("u1", "snake", "single", 100)
     lb.submit("u1", "snake", "multi", 20)
     lb.submit("u1", "other-game", "single", 5)
@@ -69,7 +69,7 @@ def test_leaderboard_boards_are_independent(tmp_path: Path):
 
 
 def test_leaderboard_top_sorted_and_limited(tmp_path: Path):
-    lb = JsonFileLeaderboardService(tmp_path / "leaderboard.json")
+    lb = SqliteLeaderboardService(tmp_path / "games.db")
     for i in range(15):
         lb.submit(f"u{i}", "snake", "multi", i * 10)
     top = lb.top("snake", "multi", limit=3)
@@ -77,14 +77,14 @@ def test_leaderboard_top_sorted_and_limited(tmp_path: Path):
 
 
 def test_leaderboard_persists_across_instances(tmp_path: Path):
-    path = tmp_path / "leaderboard.json"
-    JsonFileLeaderboardService(path).submit("u1", "snake", "single", 42)
-    lb = JsonFileLeaderboardService(path)
+    path = tmp_path / "games.db"
+    SqliteLeaderboardService(path).submit("u1", "snake", "single", 42)
+    lb = SqliteLeaderboardService(path)
     assert lb.get_best("u1", "snake", "single") == 42
 
 
 def test_leaderboard_rejects_unknown_mode(tmp_path: Path):
-    lb = JsonFileLeaderboardService(tmp_path / "leaderboard.json")
+    lb = SqliteLeaderboardService(tmp_path / "games.db")
     with pytest.raises(ValueError):
         lb.submit("u1", "snake", "coop", 10)
     with pytest.raises(ValueError):
@@ -99,8 +99,8 @@ def test_loop_registers_score_on_leaderboard(tmp_path: Path):
     state.direction = Direction(1, 0, 0)
     state.food = Cell(0, 0, 0)
     state.score = 70
-    score = JsonFileScoreService(tmp_path / "scores.json")
-    lb = JsonFileLeaderboardService(tmp_path / "leaderboard.json")
+    score = SqliteScoreService(tmp_path / "games.db")
+    lb = SqliteLeaderboardService(tmp_path / "games.db")
     sessions = InMemorySessionService()
     sid = sessions.create("snake", "u9", "multi")
     session = sessions.get(sid)
