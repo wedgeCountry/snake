@@ -1,4 +1,4 @@
-"""Dungeon game entry: registers "dungeon" (single-player RPG)."""
+"""Dungeon game entry: registers "dungeon" (single-player party RPG)."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def _serialize(state) -> dict:
         return {}
     return {
         "gridSize": state.grid_size,
-        "hero": copy.deepcopy(state.hero),
+        "party": [copy.deepcopy(m) for m in state.party],
         "monsters": [copy.deepcopy(m) for m in state.monsters],
         "potions": [list(p) for p in state.potions],
         "score": state.score,

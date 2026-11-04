@@ -141,6 +141,37 @@ function env(status, score) {
   assert(v4._timer !== null && v4._timer !== undefined, 'ws close while running falls back to REST polling');
   v4._stopTransport();
 
+  // Dungeon ships its own input module (not the snake gestures): arrows/WASD
+  // map to 2D grid directions, E enchants, dispose removes the listener
+  assert(/charAt\(0\)\.toUpperCase\(\)[\s\S]*?\+ 'Input'/.test(mainSrc),
+    'shell picks the per-game input module (DungeonInput for dungeon) instead of a stale SnakeInput');
+  const dungeonInputSrc = fs.readFileSync(path.join(__dirname, '..', 'games', 'dungeon', 'input.js'), 'utf8');
+  assert(dungeonInputSrc.includes('window.DungeonInput'), 'dungeon ships its own input module (window.DungeonInput)');
+  const inListeners = {};
+  const inSandbox = {
+    window: {
+      addEventListener: (ev, fn) => { inListeners[ev] = fn; },
+      removeEventListener: (ev) => { delete inListeners[ev]; },
+    },
+  };
+  vm.createContext(inSandbox);
+  vm.runInContext(dungeonInputSrc, inSandbox);
+  const queued = [];
+  let started = 0;
+  const fakeVmD = { running: true, queueDirection: (d) => queued.push(d), enchant: (s) => queued.push('enchant:' + s) };
+  const dungeonInput = new inSandbox.window.DungeonInput(fakeVmD, {}, () => started++);
+  const key = (k) => inListeners['keydown']({ key: k, preventDefault() {} });
+  for (const k of ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd']) key(k);
+  key('e');
+  assert(JSON.stringify(queued) === JSON.stringify(
+    ['up', 'down', 'left', 'right', 'up', 'left', 'down', 'right', 'enchant:']),
+    'dungeon input maps arrow keys + WASD to 2D directions and E to enchant');
+  fakeVmD.running = false;
+  key('ArrowUp');
+  assert(started === 1 && queued.length === 9, 'a steering key on the start screen starts the game');
+  dungeonInput.dispose();
+  assert(!inListeners['keydown'], 'dungeon input dispose removes the keydown listener');
+
   if (failures) { console.error(failures + ' contract test(s) failed'); process.exit(1); }
   console.log('All JS contract tests passed');
 })();
