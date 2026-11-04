@@ -23,6 +23,10 @@
 
     drawEntities(ctx, s, geom) {
       const { ox, oy, cell, size } = geom;
+      ctx.fillStyle = '#3a2c4f';
+      for (const w of s.walls || []) {
+        ctx.fillRect(ox + w[0] * cell, oy + w[1] * cell, cell, cell);
+      }
       ctx.fillStyle = COLORS.potion;
       for (const p of s.potions || []) {
         ctx.beginPath();

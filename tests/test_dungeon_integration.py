@@ -66,31 +66,52 @@ def _party_cell(state: dict) -> tuple[int, int]:
     return leader["x"], leader["y"]
 
 
-def test_direction_actions_steer_the_party_via_api(client):
+def test_direction_actions_steer_the_party_one_tile_per_command_via_api(client):
     _new_dungeon(client)
     game = _game(client)
+    game.state().walls.clear()  # keep the straight line free for this test
+    for m in game.state().party:
+        m["x"], m["y"] = 3, 3
+    _step(client)
+    assert _party_cell(_state(client)) == (3, 3), "no input: the party stands still"
+    assert _state(client)["turn"] == 0
+    assert _action(client, {"direction": "right"}) == 200
+    _step(client)
+    assert _party_cell(_state(client)) == (4, 3), "one command = one tile"
+    assert all((m["x"], m["y"]) == (4, 3) for m in _state(client)["party"]), \
+        "the whole party follows the leader"
+    _step(client)
+    assert _party_cell(_state(client)) == (4, 3), "no drift after the command consumed"
+
+
+def test_180_degree_reversal_is_allowed_via_api(client):
+    """The dungeon's own controls are last-write-wins: a 'left' right after
+    'right' turns the party around on the next tick (snake's queue would
+    reject the reversal)."""
+    _new_dungeon(client)
+    game = _game(client)
+    game.state().walls.clear()
     for m in game.state().party:
         m["x"], m["y"] = 3, 3
     assert _action(client, {"direction": "right"}) == 200
     _step(client)
     assert _party_cell(_state(client)) == (4, 3)
-    assert all((m["x"], m["y"]) == (4, 3) for m in _state(client)["party"]), \
-        "the whole party follows the leader"
-
-
-def test_180_degree_reversal_is_allowed_via_api(client):
-    """The dungeon's own controls are last-write-wins: after drifting right,
-    a 'left' action turns the party around immediately (snake's queue would
-    reject the reversal)."""
-    _new_dungeon(client)
-    game = _game(client)
-    for m in game.state().party:
-        m["x"], m["y"] = 3, 3
-    _step(client)  # no input: drifts right
-    assert _party_cell(_state(client)) == (4, 3)
     assert _action(client, {"direction": "left"}) == 200
     _step(client)
     assert _party_cell(_state(client)) == (3, 3), "reversal applied on the next tick"
+
+
+def test_wall_blocks_movement_via_api(client):
+    _new_dungeon(client)
+    game = _game(client)
+    game.state().walls.clear()
+    game.state().walls.append((4, 3))
+    for m in game.state().party:
+        m["x"], m["y"] = 3, 3
+    assert _action(client, {"direction": "right"}) == 200
+    _step(client)
+    assert _party_cell(_state(client)) == (3, 3), "the wall at (4,3) blocked the move"
+    assert _state(client)["turn"] == 0
 
 
 def test_invalid_direction_action_is_rejected(client):
@@ -117,7 +138,7 @@ def test_level_stays_static_throughout_the_game_via_api(client):
         _action(client, {"direction": dirs[i % 4]})
         _step(client)
     after = _state(client)
-    assert after["turn"] - turn0 == 60 and after["status"] == "running"
+    assert after["turn"] - turn0 <= 60 and after["status"] == "running"
     # monsters may die in combat and potions may be drunk, but nothing new
     # may appear: every remaining entity was already in the generated level
     assert set((m["x"], m["y"]) for m in after["monsters"]) <= cells0[0], \

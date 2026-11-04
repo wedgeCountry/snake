@@ -22,6 +22,7 @@ def _serialize(state) -> dict:
         "party": [copy.deepcopy(m) for m in state.party],
         "monsters": [copy.deepcopy(m) for m in state.monsters],
         "potions": [list(p) for p in state.potions],
+        "walls": [list(w) for w in state.walls],
         "score": state.score,
         "turn": state.turn,
         "maxTurns": state.max_turns,

@@ -3,10 +3,12 @@
 moves as a unit through a grid dungeon, fights monsters in initiative-ordered
 d20-vs-AC round combat, grabs potions (party-wide heal) and dropped weapons,
 shares XP and levels up every member, and slay the boss in the far corner.
-The level is generated once at init and stays static afterwards — no
-mid-game spawns. Direction input is last-write-wins (reversal allowed, unlike
-snake's queue), so the dungeon's own controls stay responsive. Zero I/O,
-injectable RNG. Implements the pipeline Game protocol."""
+The level (monsters, potions, walls) is generated once at init and stays
+static afterwards — no mid-game spawns — and the boss is capped so the level
+is always provably beatable. Movement is one tile per command: no input means
+the party stands still, direction input is last-write-wins (reversal allowed,
+unlike snake's queue), and walls block moves. Zero I/O, injectable RNG.
+Implements the pipeline Game protocol."""
 
 from __future__ import annotations
 
@@ -20,6 +22,7 @@ from ..engine import GameState
 from .combat import enchant_weapon, make_legendary, make_party, random_trait, resolve_encounter
 from .config import LEGENDARY_TABLE, DungeonConfig
 from .levelgen import generate_level_with_target
+from .solver import ensure_level_beatable
 
 COMBAT_LOG_LINES = 6
 
@@ -36,7 +39,8 @@ class DungeonState(GameState):
     state_schema_version = 2
 
     def __init__(self, grid_size: int, party: list[dict], monsters: list[dict],
-                 potions: list[tuple[int, int]], score: int, turn: int, max_turns: int,
+                 potions: list[tuple[int, int]], walls: list[tuple[int, int]],
+                 score: int, turn: int, max_turns: int,
                  status: str = "running", step_time_ms: int = 300,
                  combat_log: list[str] | None = None, difficulty: int = 5,
                  level_difficulty: float = 5.0) -> None:
@@ -44,6 +48,7 @@ class DungeonState(GameState):
         self.party = party  # [{name, class, x, y, hp, max_hp, ac, attack, init, level, xp, weapon, traits, skills}]
         self.monsters = monsters  # [{name, x, y, kind, hp, max_hp, ac, attack, init, level, weapon, traits, skills}]
         self.potions = list(potions)
+        self.walls = list(walls)  # cells that block movement
         self.score = score
         self.turn = turn
         self.max_turns = max_turns
@@ -75,11 +80,13 @@ class DungeonGame:
             cfg = DungeonConfig(step_time_ms=step) if isinstance(step, int) else self._config
         n = cfg.grid_size
         level = generate_level_with_target(self._rng, cfg, cfg.difficulty)
+        level = ensure_level_beatable(self._rng, level, cfg)  # boss cap: always solvable
         party = make_party(cfg)
         for member in party:
             member["x"], member["y"] = level["hero_start"]
         self._state = DungeonState(n, party, [level["boss"]] + level["monsters"],
-                                   list(level["potions"]), 0, 0, cfg.max_turns,
+                                   list(level["potions"]), [tuple(w) for w in level["walls"]],
+                                   0, 0, cfg.max_turns,
                                    step_time_ms=cfg.step_time_ms,
                                    difficulty=level["difficulty"],
                                    level_difficulty=level["measured_difficulty"])
@@ -98,8 +105,9 @@ class DungeonGame:
         party = [copy.deepcopy(m) for m in data["party"]]
         monsters = [copy.deepcopy(m) for m in data.get("monsters", [])]
         potions = [tuple(p) for p in data.get("potions", [])]
+        walls = [tuple(w) for w in data.get("walls", [])]
         self._state = DungeonState(
-            int(data["gridSize"]), party, monsters, potions,
+            int(data["gridSize"]), party, monsters, potions, walls,
             int(data.get("score", 0)), int(data.get("turn", 0)),
             int(data.get("maxTurns", self._config.max_turns)),
             status=str(data.get("status", "running")),
@@ -141,17 +149,21 @@ class DungeonGame:
         state = self.state()
         if state.status != "running":
             return state
+        if self._next is None:
+            return state  # one tile per command: no input, no movement
         cfg = self._config
-        state.turn += 1
-        n = state.grid_size
-        d = self._next or self._last
-        self._last = d
+        d = self._next
         self._next = None
+        self._last = d
         dx, dy = d.as_2d()
+        n = state.grid_size
         leader = _leader(state)
         nx, ny = clamp2d(leader["x"] + dx, leader["y"] + dy, n)
+        if (nx, ny) in state.walls:
+            return state  # walls block the move; no turn consumed
         for member in state.party:
             member["x"], member["y"] = nx, ny
+        state.turn += 1
         self._combat(state, cfg)
         self._loot(state, cfg)
         self._level_up(state, cfg)

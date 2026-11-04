@@ -55,6 +55,7 @@ def _open_field(g, rng=None):
     s = g.state()
     s.monsters.clear()
     s.potions.clear()
+    s.walls.clear()
     for m in s.party:
         m["x"], m["y"] = 0, 0
     if rng is not None:
@@ -245,8 +246,40 @@ def test_level_is_static_after_generation():
     st = g.state()
     after = (sorted((m["x"], m["y"], m["hp"]) for m in st.monsters),
              sorted(st.potions))
-    assert st.turn == 80 and st.status == "running"
-    assert before == after, "the level stayed static for 80 turns"
+    assert st.status == "running"
+    assert before == after, "the level stayed static for 80 ticks"
+
+
+def test_no_input_means_no_movement_one_tile_per_command():
+    """Movement is one tile per direction command; without input the party
+    stands still (no snake-style auto-drift)."""
+    g = _game()
+    s = _open_field(g)
+    for m in s.party:
+        m["x"], m["y"] = 3, 3
+    for _ in range(5):
+        g.tick()
+    assert all((m["x"], m["y"]) == (3, 3) for m in g.state().party)
+    assert g.state().turn == 0, "idle ticks do not consume turns"
+    g.apply_action(0, {"direction": "right"})
+    g.tick()
+    assert all((m["x"], m["y"]) == (4, 3) for m in g.state().party), "one command = one tile"
+    assert g.state().turn == 1
+    g.tick()
+    assert all((m["x"], m["y"]) == (4, 3) for m in g.state().party), "no drift after the command"
+
+
+def test_wall_blocks_the_move():
+    g = _game()
+    s = _open_field(g)
+    s.walls.append((1, 0))
+    g.apply_action(0, {"direction": "right"})
+    g.tick()
+    assert all((m["x"], m["y"]) == (0, 0) for m in g.state().party), "wall blocks the move"
+    assert g.state().turn == 0, "a blocked move consumes no turn"
+    g.apply_action(0, {"direction": "down"})
+    g.tick()
+    assert all((m["x"], m["y"]) == (0, 1) for m in g.state().party), "other moves still work"
 
 
 def test_direction_input_is_last_write_wins_and_allows_reversal():
