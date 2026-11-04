@@ -15,6 +15,7 @@ from ..common.spawner import WeightedSpawner
 from ..engine import GameState
 from .combat import make_hero, make_monster, random_trait, resolve_encounter
 from .config import DungeonConfig
+from .levelgen import clamp_difficulty, generate_level_with_target
 
 COMBAT_LOG_LINES = 6
 
@@ -25,7 +26,8 @@ class DungeonState(GameState):
     def __init__(self, grid_size: int, hero: dict, monsters: list[dict],
                  potions: list[tuple[int, int]], score: int, turn: int, max_turns: int,
                  status: str = "running", step_time_ms: int = 300,
-                 combat_log: list[str] | None = None) -> None:
+                 combat_log: list[str] | None = None, difficulty: int = 5,
+                 level_difficulty: float = 5.0) -> None:
         self.grid_size = grid_size
         self.hero = hero  # {name, x, y, hp, max_hp, dmg, level, xp, gold, weapon, traits, skills}
         self.monsters = monsters  # [{name, x, y, hp, max_hp, dmg, level, kind, weapon, traits, skills}]
@@ -36,6 +38,8 @@ class DungeonState(GameState):
         self.status = status
         self.step_time_ms = step_time_ms
         self.combat_log = combat_log or []
+        self.difficulty = difficulty            # requested level difficulty (1-10)
+        self.level_difficulty = level_difficulty  # measured difficulty of the generated layout
 
 
 class DungeonGame:
@@ -59,10 +63,14 @@ class DungeonGame:
             step = getattr(config, "step_time_ms", None)
             cfg = DungeonConfig(step_time_ms=step) if isinstance(step, int) else self._config
         n = cfg.grid_size
+        level = generate_level_with_target(self._rng, cfg, cfg.difficulty)
         hero = make_hero(cfg)
-        boss = make_monster(self._rng, n - 1, n - 1, cfg, kind="boss")
-        self._state = DungeonState(n, hero, [boss], [], 0, 0, cfg.max_turns,
-                                   step_time_ms=cfg.step_time_ms)
+        hero["x"], hero["y"] = level["hero_start"]
+        self._state = DungeonState(n, hero, [level["boss"]] + level["monsters"],
+                                   list(level["potions"]), 0, 0, cfg.max_turns,
+                                   step_time_ms=cfg.step_time_ms,
+                                   difficulty=level["difficulty"],
+                                   level_difficulty=level["measured_difficulty"])
         self._config = cfg
         self._queue.clear()
         self._last = Direction(1, 0, 0)
@@ -168,7 +176,8 @@ class DungeonGame:
             return
         cell, kind = spawned
         if kind == "monster":
-            level = 1 + min(2, state.turn // 60)  # monsters scale with dungeon depth (turns)
+            # monsters scale with dungeon depth (turns) and requested difficulty
+            level = 1 + min(2, state.turn // 60) + (clamp_difficulty(cfg.difficulty) - 1) // 3
             state.monsters.append(make_monster(self._rng, cell[0], cell[1], cfg, kind="monster", level=level))
         else:
             state.potions.append(cell)

@@ -28,6 +28,8 @@ def _serialize(state) -> dict:
         "status": state.status,
         "stepTimeMs": state.step_time_ms,
         "combatLog": list(state.combat_log),
+        "difficulty": state.difficulty,
+        "levelDifficulty": state.level_difficulty,
     }
 
 

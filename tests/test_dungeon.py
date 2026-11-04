@@ -1,12 +1,13 @@
 """Dungeon (RPG) game tests, incl. the combat system (weapons, traits,
-levels, skills). The shared contract suite in tests/contracts/ also runs
-against it via the registry."""
+levels, skills). Level-generator tests live in test_dungeon_levelgen.py.
+The shared contract suite in tests/contracts/ also runs against it via the
+registry."""
 
 import random
 
 import pytest
 
-from games.dungeon.combat import make_hero, make_monster, resolve_encounter, strike
+from games.dungeon.combat import make_hero, resolve_encounter, strike
 from games.dungeon.config import DungeonConfig
 from games.dungeon.core import DungeonGame
 
@@ -27,29 +28,42 @@ def _game(seed=1, **kw):
     return g
 
 
+def _open_field(g):
+    """Remove generated monsters/potions and pin the hero at (0,0), so tests
+    control exactly which cell the hero walks into."""
+    s = g.state()
+    s.monsters.clear()
+    s.potions.clear()
+    s.hero["x"], s.hero["y"] = 0, 0
+    return s
+
+
 def _monster(x, y, hp, kind="monster", level=1, dmg=3, weapon=None, traits=None, skills=None):
     return {"name": "Boss" if kind == "boss" else "Monster", "x": x, "y": y, "kind": kind,
             "hp": hp, "max_hp": hp, "dmg": dmg, "level": level,
             "weapon": weapon or dict(CLAWS), "traits": traits or [], "skills": skills or []}
 
 
-def test_init_places_hero_and_boss():
+def test_init_places_hero_and_boss_in_opposite_corners():
     g = _game()
     s = g.state()
-    assert (s.hero["x"], s.hero["y"]) == (0, 0)
+    n = s.grid_size
+    corners = {(0, 0), (n - 1, 0), (0, n - 1), (n - 1, n - 1)}
+    assert (s.hero["x"], s.hero["y"]) in corners
+    boss = next(m for m in s.monsters if m["kind"] == "boss")
+    assert (boss["x"], boss["y"]) == (n - 1 - s.hero["x"], n - 1 - s.hero["y"])
     assert s.hero["hp"] == s.hero["max_hp"] == 26  # 20 base + 6 from the Tough trait
     assert s.hero["weapon"]["name"] == "Fists"       # test config; default is Rusty Sword
     assert [t["name"] for t in s.hero["traits"]] == ["Tough"]
     assert s.hero["level"] == 1
-    assert len(s.monsters) == 1 and s.monsters[0]["kind"] == "boss"
-    assert (s.monsters[0]["x"], s.monsters[0]["y"]) == (7, 7)
-    boss = s.monsters[0]
     assert boss["level"] == 5 and boss["weapon"]["name"] == "Doom Axe"
     assert boss["skills"], "boss has skills"
+    assert 1 <= s.difficulty <= 10 and 1 <= s.level_difficulty <= 10
 
 
 def test_hero_moves_with_direction():
     g = _game()
+    _open_field(g)
     g.apply_action(0, {"direction": "right"})
     g.tick()
     assert (g.state().hero["x"], g.state().hero["y"]) == (1, 0)
@@ -57,7 +71,7 @@ def test_hero_moves_with_direction():
 
 def test_combat_kills_monster_and_grants_loot():
     g = _game()
-    s = g.state()
+    s = _open_field(g)
     s.monsters.append(_monster(1, 0, hp=4))  # dies to one hero hit (dmg 4 + fists 0)
     g.apply_action(0, {"direction": "right"})
     g.tick()
@@ -69,7 +83,7 @@ def test_combat_kills_monster_and_grants_loot():
 
 def test_monster_hits_back_during_the_duel():
     g = _game()
-    s = g.state()
+    s = _open_field(g)
     # hp 8: survives the hero's first 4-dmg strike, hits back for 3+1=4,
     # then dies in round 2 — the duel still ends with the hero winning
     s.monsters.append(_monster(1, 0, hp=8, dmg=3))
@@ -82,7 +96,7 @@ def test_monster_hits_back_during_the_duel():
 
 def test_weapon_bonus_counts_toward_damage():
     g = _game()
-    s = g.state()
+    s = _open_field(g)
     s.hero["weapon"] = {"name": "Iron Sword", "dmg": 4, "crit": 0.0}
     s.monsters.append(_monster(1, 0, hp=8, dmg=0, weapon=FISTS))  # 4+4 = 8 -> one-shot
     g.apply_action(0, {"direction": "right"})
@@ -93,7 +107,7 @@ def test_weapon_bonus_counts_toward_damage():
 
 def test_armored_trait_reduces_damage_taken():
     g = _game()
-    s = g.state()
+    s = _open_field(g)
     s.hero["traits"] = [{"name": "Armored", "key": "armored", "max_hp": 0, "dr": 2,
                          "dodge": 0.0, "lifesteal": 0, "berserk": 0}]
     s.monsters.append(_monster(1, 0, hp=8, dmg=3))  # raw 4, minus dr 2 -> 2 per round
@@ -142,7 +156,7 @@ def test_resolve_encounter_decides_the_winner():
 
 def test_weapon_drop_equips_better_weapon():
     g = _game(weapon_drop_chance=1.0)
-    s = g.state()
+    s = _open_field(g)
     fangs = {"name": "Fangs", "dmg": 3, "crit": 0.0}
     s.monsters.append(_monster(1, 0, hp=4, weapon=fangs))
     g.apply_action(0, {"direction": "right"})
@@ -152,7 +166,7 @@ def test_weapon_drop_equips_better_weapon():
 
 def test_level_up_grants_a_new_trait():
     g = _game()
-    s = g.state()
+    s = _open_field(g)
     s.hero["xp"] = 30  # one level-up worth
     g.apply_action(0, {"direction": "right"})
     g.tick()
@@ -164,6 +178,7 @@ def test_level_up_grants_a_new_trait():
 def test_spawned_monsters_carry_weapons_traits_skills_and_levels():
     g = _game(seed=3)
     s = g.state()
+    s.hero["hp"] = s.hero["max_hp"] = 100000  # survive whatever we walk into
     for _ in range(60):
         g.tick()
         if len(g.state().monsters) > 1:
@@ -176,7 +191,7 @@ def test_spawned_monsters_carry_weapons_traits_skills_and_levels():
 
 def test_potion_heals_hero():
     g = _game()
-    s = g.state()
+    s = _open_field(g)
     s.hero["hp"] = 5
     s.potions.append((1, 0))
     g.apply_action(0, {"direction": "right"})
@@ -187,7 +202,7 @@ def test_potion_heals_hero():
 
 def test_hero_death_is_terminal_and_stable():
     g = _game()
-    s = g.state()
+    s = _open_field(g)
     s.hero["hp"] = 1
     s.monsters.append(_monster(1, 0, hp=100, dmg=50))
     g.apply_action(0, {"direction": "right"})
@@ -201,10 +216,21 @@ def test_hero_death_is_terminal_and_stable():
 def test_boss_kill_wins():
     g = _game()
     s = g.state()
-    s.monsters[0]["hp"] = 4  # boss dies to one hero hit (dmg 4 + fists 0)
-    # teleport hero next to the boss
-    s.hero["x"], s.hero["y"] = 6, 7
-    g.apply_action(0, {"direction": "right"})
+    boss = next(m for m in s.monsters if m["kind"] == "boss")
+    boss["hp"] = 4  # boss dies to one hero hit (dmg 4 + fists 0)
+    # teleport the hero next to the boss; approach from a direction that is
+    # not a 180-degree turn from the default drift (right), which the input
+    # queue would reject
+    bx, by = boss["x"], boss["y"]
+    if bx > 0:
+        s.hero["x"], s.hero["y"] = bx - 1, by
+        g.apply_action(0, {"direction": "right"})
+    elif by > 0:
+        s.hero["x"], s.hero["y"] = bx, by - 1
+        g.apply_action(0, {"direction": "down"})
+    else:
+        s.hero["x"], s.hero["y"] = bx, by + 1
+        g.apply_action(0, {"direction": "up"})
     g.tick()
     assert g.state().status == "won"
 

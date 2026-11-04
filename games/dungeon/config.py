@@ -85,5 +85,10 @@ class DungeonConfig(RuleConfig):
     level_dmg_bonus: int = 1        # +dmg per level above 1
     max_combat_rounds: int = 12     # rounds per encounter before hp ratio decides
     weapon_drop_chance: float = 0.5  # killed monster drops its weapon
+    # level generator: requested difficulty 1-10, and the calibration of the
+    # duel-threat measure (total expected hp fraction lost that maps to 10)
+    difficulty: int = 5
+    difficulty_reference: float = 2.0
+    level_gen_attempts: int = 25
     weights: dict[str, int] = field(default_factory=lambda: {"monster": 70, "potion": 30})
     durations_s: dict[str, float | None] = field(default_factory=lambda: {"monster": None, "potion": None})

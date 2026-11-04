@@ -51,7 +51,8 @@
         const traits = (hero.traits || []).map((t) => t.name).join(', ') || '—';
         ctx.fillStyle = this.colors.text;
         ctx.font = '12px sans-serif';
-        ctx.fillText('HP ' + hero.hp + '/' + hero.max_hp + ' · XP ' + hero.xp +
+        ctx.fillText('Dungeon D' + (s.difficulty || 5) + ' (gemessen ' + (s.levelDifficulty || 5) +
+          ') · HP ' + hero.hp + '/' + hero.max_hp + ' · XP ' + hero.xp +
           ' · Gold ' + hero.gold + ' · ' + (w.name || '—') + ' · ' + traits,
           ox + 6, oy + size + 18);
       }
