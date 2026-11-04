@@ -54,6 +54,30 @@ SKILL_TABLE: dict[str, dict] = {
     "doom_slam":    {"name": "Doom Slam",    "chance": 0.30, "mult": 2.0},
 }
 
+# legendary weapon key -> weapon stats + a fixed starting enchantment
+LEGENDARY_TABLE: dict[str, dict] = {
+    "dragonfang":  {"name": "Dragonfang",  "dmg": 7, "crit": 0.25,
+                    "enchant": {"school": "fire",  "level": 1}},
+    "frostmourne": {"name": "Frostmourne", "dmg": 6, "crit": 0.15,
+                    "enchant": {"school": "frost", "level": 1}},
+    "bloodthirst": {"name": "Bloodthirst", "dmg": 5, "crit": 0.10,
+                    "enchant": {"school": "blood", "level": 1}},
+    "stormcaller": {"name": "Stormcaller", "dmg": 6, "crit": 0.20,
+                    "enchant": {"school": "storm", "level": 1}},
+}
+
+# enchant school key -> combat effect, scaling per enchant level
+# fire:  +2 damage per level on every hit
+# frost: 10% per level chance to freeze the defender (it skips its next strike)
+# blood: heal the attacker 1+level per hit
+# storm: 15% per level chance to deal double damage on a hit
+ENCHANT_TABLE: dict[str, dict] = {
+    "fire":  {"name": "Immolation",   "dmg_per_level": 2},
+    "frost": {"name": "Glacial",      "freeze_chance_per_level": 0.10},
+    "blood": {"name": "Vampiric",     "heal_per_level": 1},
+    "storm": {"name": "Stormforged",  "double_chance_per_level": 0.15},
+}
+
 
 @dataclass(frozen=True)
 class DungeonConfig(RuleConfig):
@@ -90,5 +114,9 @@ class DungeonConfig(RuleConfig):
     difficulty: int = 5
     difficulty_reference: float = 2.0
     level_gen_attempts: int = 25
+    # legendary objects & enchanting
+    max_enchant_level: int = 3
+    enchant_cost_base: int = 10   # gold cost = base * (new level); level 1 costs 10
+    boss_legendary_drop: bool = True  # the boss always drops a legendary weapon
     weights: dict[str, int] = field(default_factory=lambda: {"monster": 70, "potion": 30})
     durations_s: dict[str, float | None] = field(default_factory=lambda: {"monster": None, "potion": None})

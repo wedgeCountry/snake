@@ -63,6 +63,11 @@ window.GameViewModel = class GameViewModel {
     Promise.resolve(this.api.sendAction(this.gameId, player || 0, { direction: name })).catch(() => {});
   }
 
+  enchant(school) {
+    if (!this.running) return;
+    Promise.resolve(this.api.sendAction(this.gameId, 0, { enchant: school || '' })).catch(() => {});
+  }
+
   async toggleMode() {
     this.mode = this.mode === 'single' ? 'multi' : 'single';
     await this.start(this.mode);

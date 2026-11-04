@@ -13,9 +13,10 @@
       this.dom.height.textContent = hero.hp + ' HP';
       if (this.dom.star) {
         const w = hero.weapon || {};
+        const ench = w.enchant ? ' [' + w.enchant.name + ']' : '';
         this.dom.star.style.display = '';
         this.dom.star.textContent = 'Lvl ' + (hero.level || 1) + ' · ' +
-          (hero.dmg || 0) + '+' + (w.dmg || 0) + ' DMG · ' + (w.name || '—');
+          (hero.dmg || 0) + '+' + (w.dmg || 0) + ' DMG · ' + (w.name || '—') + ench;
       }
     }
 
@@ -51,9 +52,10 @@
         const traits = (hero.traits || []).map((t) => t.name).join(', ') || '—';
         ctx.fillStyle = this.colors.text;
         ctx.font = '12px sans-serif';
+        const ench = w.enchant ? ' [' + w.enchant.name + ']' : '';
         ctx.fillText('Dungeon D' + (s.difficulty || 5) + ' (gemessen ' + (s.levelDifficulty || 5) +
           ') · HP ' + hero.hp + '/' + hero.max_hp + ' · XP ' + hero.xp +
-          ' · Gold ' + hero.gold + ' · ' + (w.name || '—') + ' · ' + traits,
+          ' · Gold ' + hero.gold + ' · ' + (w.name || '—') + ench + ' · ' + traits + ' · [E] verzaubern',
           ox + 6, oy + size + 18);
       }
       ctx.fillStyle = COLORS.log;

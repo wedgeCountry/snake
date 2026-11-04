@@ -13,11 +13,15 @@ from ..common.direction import Direction, DirectionQueue
 from ..common.grid_move import clamp2d
 from ..common.spawner import WeightedSpawner
 from ..engine import GameState
-from .combat import make_hero, make_monster, random_trait, resolve_encounter
-from .config import DungeonConfig
+from .combat import enchant_weapon, make_hero, make_legendary, make_monster, random_trait, resolve_encounter
+from .config import LEGENDARY_TABLE, DungeonConfig
 from .levelgen import clamp_difficulty, generate_level_with_target
 
 COMBAT_LOG_LINES = 6
+
+
+def _weapon_score(w: dict) -> float:
+    return w.get("dmg", 0) * 2 + w.get("crit", 0.0) * 10
 
 
 class DungeonState(GameState):
@@ -90,8 +94,17 @@ class DungeonGame:
     def apply_action(self, player: int, action: dict[str, Any]) -> None:
         if player != 0:
             raise ValueError("dungeon is single-player")
-        direction = Direction.from_name_2d(str(action["direction"]))
-        self._queue.push(direction, self._last)
+        if "direction" in action:
+            direction = Direction.from_name_2d(str(action["direction"]))
+            self._queue.push(direction, self._last)
+        elif "enchant" in action:
+            school = str(action["enchant"]) or None
+            ok, msg = enchant_weapon(self.state().hero, self._config, school)
+            if not ok:
+                raise ValueError(msg)
+            self.state().combat_log = (self.state().combat_log + [msg])[-COMBAT_LOG_LINES:]
+        else:
+            raise ValueError(f"unknown action: {sorted(action)}")
 
     def tick(self) -> DungeonState:
         state = self.state()
@@ -133,13 +146,22 @@ class DungeonGame:
                 hero["gold"] += 5
             self._maybe_take_weapon(hero, monster, cfg, log)
         state.combat_log = log[-COMBAT_LOG_LINES:]
+        for m in state.monsters:
+            m.pop("frozen", None)
+        hero.pop("frozen", None)
 
     def _maybe_take_weapon(self, hero: dict, monster: dict, cfg: DungeonConfig, log: list[str]) -> None:
-        drop = monster.get("weapon") or {}
         current = hero.get("weapon") or {}
-        if self._rng.random() < cfg.weapon_drop_chance and drop.get("dmg", 0) > current.get("dmg", 0):
+        if monster.get("kind") == "boss" and cfg.boss_legendary_drop:
+            drop = make_legendary(self._rng)  # bosses always drop a legendary object
+        else:
+            if self._rng.random() >= cfg.weapon_drop_chance:
+                return
+            drop = monster.get("weapon") or {}
+        if _weapon_score(drop) > _weapon_score(current):
             hero["weapon"] = dict(drop)
-            log.append(f"{hero['name']} takes the {drop['name']}!")
+            label = "legendary " if drop.get("key") in LEGENDARY_TABLE else ""
+            log.append(f"{hero['name']} takes the {label}{drop['name']}!")
 
     def _loot(self, state: DungeonState, cfg: DungeonConfig) -> None:
         hero = state.hero

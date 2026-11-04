@@ -68,6 +68,13 @@ def _dps(actor: dict, cfg: DungeonConfig) -> float:
     weapon = actor.get("weapon") or {}
     base = (actor.get("dmg", 0) + weapon.get("dmg", 0)
             + (actor.get("level", 1) - 1) * cfg.level_dmg_bonus)
+    # enchantment expectation: fire adds flat damage, storm adds double-hit chance
+    ench = weapon.get("enchant") or {}
+    elvl = ench.get("level", 0)
+    if ench.get("school") == "fire":
+        base += 2 * elvl
+    elif ench.get("school") == "storm":
+        base *= 1 + 0.15 * elvl
     crit = weapon.get("crit", 0.0)
     skill_bonus = sum(
         s.get("chance", 0) * (s.get("dmg", 0) + base * max(0.0, s.get("mult", 1.0) - 1))

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import random
 
-from .config import SKILL_TABLE, TRAIT_TABLE, WEAPON_TABLE, DungeonConfig
+from .config import ENCHANT_TABLE, LEGENDARY_TABLE, SKILL_TABLE, TRAIT_TABLE, WEAPON_TABLE, DungeonConfig
 
 
 def make_hero(cfg: DungeonConfig) -> dict:
@@ -23,10 +23,52 @@ def make_hero(cfg: DungeonConfig) -> dict:
         "name": "Hero", "x": 0, "y": 0,
         "hp": max_hp, "max_hp": max_hp, "dmg": cfg.hero_dmg,
         "level": 1, "xp": 0, "gold": 0,
-        "weapon": dict(WEAPON_TABLE[cfg.hero_weapon]),
+        "weapon": _plain_weapon(WEAPON_TABLE[cfg.hero_weapon]),
         "traits": traits,
         "skills": [],
     }
+
+
+def _plain_weapon(entry: dict) -> dict:
+    w = dict(entry)
+    w["enchant"] = None
+    return w
+
+
+def make_legendary(rng: random.Random) -> dict:
+    """A random legendary weapon with its fixed starting enchantment."""
+    key = rng.choice(list(LEGENDARY_TABLE))
+    entry = LEGENDARY_TABLE[key]
+    w = dict(entry, key=key)
+    ench = entry.get("enchant")
+    w["enchant"] = dict(ench, name=ENCHANT_TABLE[ench["school"]]["name"] + " +" + str(ench["level"])) if ench else None
+    return w
+
+
+def enchant_weapon(hero: dict, cfg: DungeonConfig, school: str | None = None) -> tuple[bool, str]:
+    """Spend gold to raise the hero weapon's enchantment one level. The first
+    enchant picks the school (default: fire); later ones keep it."""
+    weapon = hero.get("weapon")
+    if not weapon:
+        return False, "no weapon to enchant"
+    if school is not None and school not in ENCHANT_TABLE:
+        return False, f"unknown enchant school: {school}"
+    ench = weapon.get("enchant")
+    if ench is None:
+        school = school or "fire"
+        level = 0
+    else:
+        school = ench["school"]  # an enchanted weapon keeps its school
+        level = ench["level"]
+    if level >= cfg.max_enchant_level:
+        return False, weapon["name"] + " is already at max enchant"
+    cost = cfg.enchant_cost_base * (level + 1)
+    if hero.get("gold", 0) < cost:
+        return False, f"not enough gold ({cost} needed)"
+    hero["gold"] -= cost
+    weapon["enchant"] = {"school": school, "level": level + 1,
+                         "name": ENCHANT_TABLE[school]["name"] + " +" + str(level + 1)}
+    return True, f"{hero.get('name', 'Hero')} enchants {weapon['name']} -> {weapon['enchant']['name']} (-{cost} gold)"
 
 
 def make_hero_at_level(cfg: DungeonConfig, level: int) -> dict:
@@ -57,13 +99,13 @@ def make_monster(rng: random.Random, x: int, y: int, cfg: DungeonConfig,
     if kind == "boss":
         level = cfg.boss_level if level is None else level
         base_hp, base_dmg = cfg.boss_hp, cfg.boss_dmg
-        weapon = dict(WEAPON_TABLE[cfg.boss_weapon])
+        weapon = _plain_weapon(WEAPON_TABLE[cfg.boss_weapon])
         skill_pool = cfg.boss_skills
         name = "Boss"
     else:
         level = 1 if level is None else level
         base_hp, base_dmg = cfg.monster_hp, cfg.monster_dmg
-        weapon = dict(WEAPON_TABLE[rng.choice(list(cfg.monster_weapons))])
+        weapon = _plain_weapon(WEAPON_TABLE[rng.choice(list(cfg.monster_weapons))])
         skill_pool = cfg.monster_skills
         name = "Monster"
     trait_key = rng.choice(list(TRAIT_TABLE))
@@ -126,11 +168,28 @@ def strike(rng: random.Random, attacker: dict, defender: dict,
     crit = rng.random() < weapon.get("crit", 0.0)
     if crit:
         dmg = int(dmg * cfg.crit_multiplier)
+    # weapon enchantment effects (legendary objects / enchanting system)
+    ench = weapon.get("enchant") or {}
+    elvl = ench.get("level", 0)
+    school = ench.get("school")
+    if school == "fire" and elvl:
+        dmg += ENCHANT_TABLE["fire"]["dmg_per_level"] * elvl
+        notes.append(ench.get("name", "Immolation"))
+    if school == "storm" and elvl and rng.random() < ENCHANT_TABLE["storm"]["double_chance_per_level"] * elvl:
+        dmg = int(dmg * 2)
+        notes.append(ench.get("name", "Stormforged") + " x2")
     dmg = max(1, dmg - _effect(defender, "dr"))
     defender["hp"] = defender.get("hp", 0) - dmg
     lifesteal = _effect(attacker, "lifesteal")
     if lifesteal:
         attacker["hp"] = min(max_hp, attacker.get("hp", 0) + lifesteal)
+    if school == "blood" and elvl:
+        heal = ENCHANT_TABLE["blood"]["heal_per_level"] + elvl - 1
+        attacker["hp"] = min(max_hp, attacker.get("hp", 0) + heal)
+        notes.append(f"{ench.get('name', 'Vampiric')} +{heal}HP")
+    if school == "frost" and elvl and rng.random() < ENCHANT_TABLE["frost"]["freeze_chance_per_level"] * elvl:
+        defender["frozen"] = True
+        notes.append(ench.get("name", "Glacial") + " freezes")
     text = f"{a_name} hits {d_name} for {dmg}"
     if crit:
         text += " (crit!)"
@@ -152,8 +211,12 @@ def resolve_encounter(rng: random.Random, hero: dict, monster: dict,
             log.append(f"{monster.get('name', 'Monster')} is slain!")
             monster["hp"] = 0
             return log
-        _, line = strike(rng, monster, hero, cfg)
-        log.append(f"R{rnd} {line}")
+        if monster.get("frozen"):
+            monster["frozen"] = False
+            log.append(f"R{rnd} {monster.get('name', 'Monster')} is frozen and cannot strike!")
+        else:
+            _, line = strike(rng, monster, hero, cfg)
+            log.append(f"R{rnd} {line}")
         if hero.get("hp", 0) <= 0:
             log.append(f"{hero.get('name', 'Hero')} falls!")
             hero["hp"] = 0
