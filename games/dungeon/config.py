@@ -27,7 +27,14 @@ BOSS_INIT = 4
 BOSS_LEVEL = 5
 POTION_HEAL = 8
 XP_PER_KILL = 10
-XP_LEVEL_UP = 30
+XP_LEVEL_UP = 30      # XP needed to go from level 1 to 2
+XP_LEVEL_GROWTH = 1.5  # each new level needs xp_level_up * growth^(level-1) XP
+
+
+def xp_needed_for_level(level: int, cfg: "DungeonConfig") -> int:
+    """XP a member of the given level needs to reach the next level. Each new
+    level costs more than the previous one (geometric curve)."""
+    return int(cfg.xp_level_up * cfg.xp_level_growth ** max(0, level - 1))
 
 # weapon key -> {name, damage die sides, flat damage bonus}
 WEAPON_TABLE: dict[str, dict] = {
@@ -110,7 +117,8 @@ class DungeonConfig(RuleConfig):
     boss_level: int = BOSS_LEVEL
     potion_heal: int = POTION_HEAL
     xp_per_kill: int = XP_PER_KILL
-    xp_level_up: int = XP_LEVEL_UP
+    xp_level_up: int = XP_LEVEL_UP      # XP for level 1 -> 2 (base of the curve)
+    xp_level_growth: float = XP_LEVEL_GROWTH  # per-level XP cost multiplier
     step_time_ms: int = 300
     # the party: one hero per class key, in this order (index 0 is the leader
     # and holds the party's gold purse and grid position)

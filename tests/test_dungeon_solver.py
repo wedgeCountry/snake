@@ -10,6 +10,7 @@ from games.dungeon.core import DungeonGame
 from games.dungeon.levelgen import generate_level_with_target
 from games.dungeon.solver import (
     _expected_duel,
+    ensure_level_beatable,
     minimal_party_level,
     prove_playable,
     solve_level,
@@ -61,6 +62,7 @@ def test_solver_solution_replays_as_a_win_in_the_real_game():
     s = g.state()
     s.monsters.clear()
     s.potions.clear()
+    s.walls = [tuple(w) for w in level["walls"]]
     s.party = [dict(m) for m in make_party_at_level(cfg, 7)]
     for m in s.party:
         m["x"], m["y"] = level["hero_start"]
@@ -114,12 +116,60 @@ def test_prove_playable_reports_difficulty_and_party_level():
 def test_minimal_party_level_is_the_lowest_beatable_level():
     cfg = _cfg(boss_level=10)
     result = minimal_party_level(10, seed=2, cfg=cfg, max_nodes=100_000)
-    assert result["playable"] and result["minimalPartyLevel"] == 2
+    # with the scaling XP curve a fresh party levels slower, so the minimum
+    # is above 1 — the exact value depends on the curve, what matters is the
+    # property: it is playable at the minimum and unprovable one level below
+    assert result["playable"] and result["minimalPartyLevel"] >= 2
     # the same generated level is used for every party level (same seed), and
     # party stats grow monotonically with level, so the level below the minimum
     # must be unprovable
     below = prove_playable(10, result["minimalPartyLevel"] - 1, seed=2, cfg=cfg, max_nodes=100_000)
     assert below["playable"] is False
+
+
+def test_solver_routes_around_walls():
+    cfg = _cfg(grid_size=4)
+    level = {"grid_size": 4, "difficulty": 1, "hero_start": (0, 0),
+             "boss": _flat_monster(3, 0, hp=4, kind="boss", level=1),
+             "monsters": [], "potions": [], "measured_difficulty": 1.0,
+             "walls": [(1, 0), (2, 0)]}  # the direct row to the boss is walled off
+    party = make_party_at_level(cfg, 1)
+    for m in party:
+        m["x"], m["y"] = 0, 0
+    sol = solve_level(level, party, cfg)
+    assert sol is not None
+    assert sol.turns == 5, "detour down-around-up beats the Manhattan distance of 3"
+    assert sol.moves == ["down", "right", "right", "right", "up"]
+
+
+def test_ensure_level_beatable_caps_an_unbeatable_boss():
+    """A boss too strong for a fresh party is nerfed (level, then hp) until
+    the solver can prove a winning solution — the level always stays beatable."""
+    cfg = _cfg(grid_size=4)
+    level = {"grid_size": 4, "difficulty": 10, "hero_start": (0, 0),
+             "boss": _flat_monster(3, 3, hp=100_000, attack=100, ac=30, kind="boss", level=9),
+             "monsters": [], "potions": [], "measured_difficulty": 10.0, "walls": []}
+    before = (level["boss"]["level"], level["boss"]["max_hp"])
+    ensure_level_beatable(random.Random(1), level, cfg, max_nodes=5_000)
+    after = (level["boss"]["level"], level["boss"]["max_hp"])
+    assert after < before, f"boss was nerfed: {before} -> {after}"
+    party = make_party_at_level(cfg, 1)
+    for m in party:
+        m["x"], m["y"] = 0, 0
+    sol = solve_level(level, party, cfg, max_nodes=50_000)
+    assert sol is not None, "after the cap, a fresh party can provably win"
+
+
+def test_generated_levels_are_always_beatable_by_a_fresh_party():
+    cfg = _cfg()
+    for d in (1, 5, 10):
+        for seed in (1, 7, 42):
+            level = generate_level_with_target(random.Random(seed), cfg, d)
+            ensure_level_beatable(random.Random(seed), level, cfg, max_nodes=30_000)
+            party = make_party_at_level(cfg, 1)
+            for m in party:
+                m["x"], m["y"] = level["hero_start"]
+            assert solve_level(level, party, cfg, max_nodes=30_000) is not None, (d, seed)
 
 
 def test_solver_is_deterministic_per_seed():

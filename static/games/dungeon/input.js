@@ -7,6 +7,7 @@ window.DungeonInput = class DungeonInput {
     this.onStart = onStart;
     this._handlers = [];
     this._onKey = (e) => {
+      if (e.repeat) return; // one press = one tile: ignore key auto-repeat
       const steer = {
         ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
         w: 'up', s: 'down', a: 'left', d: 'right',

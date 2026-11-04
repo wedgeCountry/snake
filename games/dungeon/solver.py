@@ -21,13 +21,12 @@ import math
 import random
 from dataclasses import dataclass
 
-from .combat import make_party_at_level
-from .config import DungeonConfig
+from .combat import make_monster, make_party_at_level
+from .config import DungeonConfig, xp_needed_for_level
 from .levelgen import _dps, generate_level_with_target, hit_probability
 
 DIRS = {"left": (-1, 0), "right": (1, 0), "up": (0, -1), "down": (0, 1)}
-OPPOSITE = {"left": "right", "right": "left", "up": "down", "down": "up"}
-INITIAL_LAST = "right"  # the core's default drift direction
+INITIAL_LAST = "right"  # the core's initial facing (kept in the search state)
 
 
 @dataclass
@@ -69,9 +68,10 @@ def _expected_duel(party: list[dict], monster: dict, cfg: DungeonConfig) -> tupl
 def _apply_level_ups(hps: tuple[float, ...], level: int, xp: int,
                      cfg: DungeonConfig) -> tuple[tuple[float, ...], int, int]:
     """Mirror of the core's level-up (all members share xp, so they share the
-    level): on level-up every member is fully healed to its new max_hp."""
-    while xp >= cfg.xp_level_up:
-        xp -= cfg.xp_level_up
+    level, with the scaling XP curve): on level-up every member is fully
+    healed to its new max_hp."""
+    while xp >= xp_needed_for_level(level, cfg):
+        xp -= xp_needed_for_level(level, cfg)
         level += 1
         fresh = make_party_at_level(cfg, level)
         hps = tuple(float(m["max_hp"]) for m in fresh)
@@ -96,6 +96,7 @@ def solve_level(level: dict, party: list[dict], cfg: DungeonConfig,
     boss_id = boss["id"]
     boss_pos = (boss["x"], boss["y"])
     potions0 = frozenset(level["potions"])
+    walls = frozenset(level.get("walls", ()))
     start_party = [dict(m) for m in party]
     for m in start_party:
         m["x"], m["y"] = level["hero_start"]
@@ -116,9 +117,9 @@ def solve_level(level: dict, party: list[dict], cfg: DungeonConfig,
             m["hp"] = hp
             m["x"], m["y"] = x, y
         for name, (dx, dy) in DIRS.items():
-            if name == OPPOSITE[last]:
-                continue  # the input queue rejects 180-degree turns
             nx, ny = min(max(x + dx, 0), n - 1), min(max(y + dy, 0), n - 1)
+            if (nx, ny) in walls:
+                continue  # walls block the move
             nhps, nlevel, nxp = hps, level_, xp
             nmons = set(mons)
             nBoss = boss_dead
@@ -193,6 +194,29 @@ def prove_playable(difficulty: int, party_level: int, seed: int = 1,
         "turns": sol.turns if sol else None,
         "moves": sol.moves if sol else [],
     }
+
+
+def ensure_level_beatable(rng: random.Random, level: dict, cfg: DungeonConfig,
+                          party_level: int = 1, max_nodes: int = 50_000,
+                          max_nerfs: int = 8) -> dict:
+    """Cap the boss strength until a fresh party can provably beat the whole
+    level: run the solver, and if no winning solution is found within the node
+    budget, nerf the boss one level (halving its hp once it is at level 1).
+    After this returns, the generated dungeon is guaranteed to have a solution
+    (or the nerf budget was exhausted, which in practice means the boss was
+    already beatable but the search budget ran out)."""
+    for _ in range(max_nerfs):
+        party = make_party_at_level(cfg, party_level)
+        if solve_level(level, party, cfg, max_nodes=max_nodes) is not None:
+            return level
+        boss = level["boss"]
+        if boss.get("level", 1) > 1:
+            level["boss"] = make_monster(rng, boss["x"], boss["y"], cfg,
+                                         kind="boss", level=boss["level"] - 1)
+        else:
+            boss["max_hp"] = max(1, boss["max_hp"] // 2)
+            boss["hp"] = boss["max_hp"]
+    return level
 
 
 def minimal_party_level(difficulty: int, seed: int = 1, cfg: DungeonConfig | None = None,

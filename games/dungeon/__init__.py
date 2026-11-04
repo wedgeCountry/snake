@@ -7,6 +7,7 @@ import random
 
 from ..engine import Game
 from ..registry import register
+from .config import DungeonConfig, xp_needed_for_level
 from .core import DungeonGame, DungeonState
 
 
@@ -19,9 +20,13 @@ def _serialize(state) -> dict:
         return {}
     return {
         "gridSize": state.grid_size,
-        "party": [copy.deepcopy(m) for m in state.party],
+        # xpNeeded uses the default XP curve (the routes never override it)
+        "party": [{**copy.deepcopy(m),
+                   "xpNeeded": xp_needed_for_level(m["level"], DungeonConfig())}
+                  for m in state.party],
         "monsters": [copy.deepcopy(m) for m in state.monsters],
         "potions": [list(p) for p in state.potions],
+        "walls": [list(w) for w in state.walls],
         "score": state.score,
         "turn": state.turn,
         "maxTurns": state.max_turns,

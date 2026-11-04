@@ -166,11 +166,92 @@ function env(status, score) {
   assert(JSON.stringify(queued) === JSON.stringify(
     ['up', 'down', 'left', 'right', 'up', 'left', 'down', 'right', 'enchant:']),
     'dungeon input maps arrow keys + WASD to 2D directions and E to enchant');
+  const beforeRepeat = queued.length;
+  inListeners['keydown']({ key: 'ArrowLeft', repeat: true, preventDefault() {} });
+  assert(queued.length === beforeRepeat, 'dungeon input ignores key auto-repeat (one press = one tile)');
   fakeVmD.running = false;
   key('ArrowUp');
   assert(started === 1 && queued.length === 9, 'a steering key on the start screen starts the game');
   dungeonInput.dispose();
   assert(!inListeners['keydown'], 'dungeon input dispose removes the keydown listener');
+
+  // Dungeon view: own canvas rendering + stats button/panel + tap-to-inspect
+  const dungeonViewSrc = fs.readFileSync(path.join(__dirname, '..', 'games', 'dungeon', 'view.js'), 'utf8');
+  assert(dungeonViewSrc.includes('floorA') && dungeonViewSrc.includes('strokeRect'),
+    'dungeon view renders its own checkerboard dungeon floor with border (not the shared plain grid)');
+  assert(dungeonViewSrc.includes("'pointerdown'"), 'dungeon view listens for taps on the canvas');
+  assert(dungeonViewSrc.includes('dungeon-stats-btn') && dungeonViewSrc.includes('dungeon-panel'),
+    'dungeon view creates a stats button + details panel');
+  assert(dungeonViewSrc.includes('_showMonster') && dungeonViewSrc.includes('_showParty'),
+    'tapping an enemy or the party shows its stats');
+  assert(dungeonViewSrc.includes('Lv') && dungeonViewSrc.includes('HP'),
+    'canvas stats bar shows level and health per member');
+
+  // functional: instantiate the dungeon view with stub DOM/canvas and exercise it
+  function stubEl(tag) {
+    return {
+      tag, children: [], style: {}, textContent: '', innerHTML: '', className: '', removed: false,
+      classList: { _s: new Set(), add(c) { this._s.add(c); }, remove(c) { this._s.delete(c); }, contains(c) { return this._s.has(c); } },
+      listeners: {},
+      addEventListener(ev, fn) { this.listeners[ev] = fn; },
+      removeEventListener(ev) { delete this.listeners[ev]; },
+      appendChild(c) { this.children.push(c); },
+      remove() { this.removed = true; },
+      getBoundingClientRect() { return { left: 0, top: 0, width: 400, height: 400 }; },
+    };
+  }
+  const createdEls = [];
+  const canvasStub = Object.assign(stubEl('canvas'), {
+    clientWidth: 400, clientHeight: 400, width: 400, height: 400,
+    getContext: () => new Proxy({}, { get: (t, k) => (k in t ? t[k] : () => {}), set: () => true }),
+  });
+  const sandboxV = {
+    window: { addEventListener() {}, removeEventListener() {}, devicePixelRatio: 1 },
+    document: {
+      getElementById: () => stubEl('div'),
+      createElement: (tag) => { const el = stubEl(tag); createdEls.push(el); return el; },
+      body: { appendChild() {} },
+    },
+  };
+  vm.createContext(sandboxV);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'games', 'common', 'grid2d.js'), 'utf8'), sandboxV);
+  vm.runInContext(dungeonViewSrc, sandboxV);
+  const DV = sandboxV.window.GameView_dungeon;
+  const dv = new DV(canvasStub);
+  dv._n = 8; // 400x400 canvas, 8x8 grid -> 50px cells
+  assert(JSON.stringify(dv._cellAt(250, 50)) === JSON.stringify([5, 1]), 'tap maps to grid cell [5,1]');
+  assert(dv._cellAt(-5, 10) === null, 'tap outside the board maps to null');
+  const mState = {
+    gridSize: 8,
+    party: [{ name: 'Warrior', class: 'warrior', x: 0, y: 0, hp: 36, max_hp: 36, ac: 16, attack: 5,
+              level: 1, xp: 0, xpNeeded: 30, weapon: { name: 'Iron Sword', die: 8, bonus: 3 }, traits: [], skills: [] }],
+    monsters: [{ name: 'Boss', kind: 'boss', x: 5, y: 1, hp: 46, max_hp: 46, ac: 17, attack: 10,
+                 level: 5, weapon: { name: 'Doom Axe', die: 12, bonus: 5 }, traits: [], skills: [] }],
+    potions: [], walls: [], combatLog: [],
+  };
+  let renderThrew = null;
+  try { dv.render({ state: mState }); } catch (e) { renderThrew = e; }
+  assert(renderThrew === null, 'dungeon render() draws a full state without throwing');
+  dv._state = mState;
+  const panel = createdEls.find((el) => el.className.includes('dungeon-panel'));
+  const btn = createdEls.find((el) => el.className.includes('dungeon-stats-btn'));
+  dv._handleTap({ clientX: 250, clientY: 50 });
+  assert(panel && !panel.classList.contains('hidden') && panel.innerHTML.includes('Boss') &&
+    panel.innerHTML.includes('Doom Axe') && panel.innerHTML.includes('46/46'),
+    'tapping the boss cell shows its stats (name, weapon, HP)');
+  dv._handleTap({ clientX: 10, clientY: 10 });
+  assert(panel.innerHTML.includes('Warrior') && panel.innerHTML.includes('36/36') && panel.innerHTML.includes('Level'),
+    'tapping the party cell shows party stats with level and HP');
+  dv._handleTap({ clientX: 200, clientY: 200 });
+  assert(panel.classList.contains('hidden'), 'tapping an empty cell hides the panel');
+  btn.listeners.click({ stopPropagation() {} });
+  assert(!panel.classList.contains('hidden') && panel.innerHTML.includes('Gruppe'),
+    'stats button opens the party details panel');
+  btn.listeners.click({ stopPropagation() {} });
+  assert(panel.classList.contains('hidden'), 'stats button toggles the panel closed');
+  dv.dispose();
+  assert(canvasStub.listeners['pointerdown'] === undefined && btn.removed && panel.removed,
+    'dispose removes the tap listener, stats button and panel');
 
   if (failures) { console.error(failures + ' contract test(s) failed'); process.exit(1); }
   console.log('All JS contract tests passed');

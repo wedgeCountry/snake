@@ -8,7 +8,7 @@ import random
 import pytest
 
 from games.dungeon.combat import make_party, resolve_encounter, strike
-from games.dungeon.config import DungeonConfig
+from games.dungeon.config import DungeonConfig, xp_needed_for_level
 from games.dungeon.core import DungeonGame
 
 FISTS = {"name": "Fists", "die": 4, "bonus": 0}
@@ -55,6 +55,7 @@ def _open_field(g, rng=None):
     s = g.state()
     s.monsters.clear()
     s.potions.clear()
+    s.walls.clear()
     for m in s.party:
         m["x"], m["y"] = 0, 0
     if rng is not None:
@@ -245,24 +246,95 @@ def test_level_is_static_after_generation():
     st = g.state()
     after = (sorted((m["x"], m["y"], m["hp"]) for m in st.monsters),
              sorted(st.potions))
-    assert st.turn == 80 and st.status == "running"
-    assert before == after, "the level stayed static for 80 turns"
+    assert st.status == "running"
+    assert before == after, "the level stayed static for 80 ticks"
 
 
-def test_direction_input_is_last_write_wins_and_allows_reversal():
-    """The dungeon's own controls: no snake-style queue — a new direction
-    applies immediately, including a 180-degree turn."""
+def test_each_new_level_needs_more_xp():
+    cfg = _cfg()
+    # geometric curve: 30, 45, 67, 101, ...
+    assert xp_needed_for_level(1, cfg) == 30
+    assert xp_needed_for_level(2, cfg) == 45
+    assert xp_needed_for_level(3, cfg) == 67
+    levels = [xp_needed_for_level(l, cfg) for l in range(1, 8)]
+    assert levels == sorted(levels) and len(set(levels)) == len(levels), "strictly increasing"
+    # in-game: 44 XP at level 2 is not enough, 45 XP levels up to 3
+    g = _game()
+    s = _open_field(g, ScriptedRng(randoms=[0.99]))
+    for m in s.party:
+        m["level"] = 2
+        m["xp"] = 44
+    g.apply_action(0, {"direction": "right"})
+    g.tick()
+    assert all(m["level"] == 2 and m["xp"] == 44 for m in g.state().party), "below the threshold"
+    for m in g.state().party:
+        m["xp"] = 45
+    g.apply_action(0, {"direction": "down"})
+    g.tick()
+    assert all(m["level"] == 3 and m["xp"] == 0 for m in g.state().party), "exactly the threshold levels up"
+
+
+def test_kill_logs_the_xp_gain():
+    g = _game()
+    rng = ScriptedRng(rands=[10, 9, 8, 1, 20, 8, 8], randoms=[0.99])
+    s = _open_field(g, rng)
+    s.monsters.append(_monster(1, 0, hp=4))
+    g.apply_action(0, {"direction": "right"})
+    g.tick()
+    assert any("+10 XP" in line for line in g.state().combat_log)
+
+
+def test_no_input_means_no_movement_one_tile_per_command():
+    """Movement is one tile per direction command; without input the party
+    stands still (no snake-style auto-drift)."""
     g = _game()
     s = _open_field(g)
     for m in s.party:
         m["x"], m["y"] = 3, 3
-    g.apply_action(0, {"direction": "left"})   # opposite of the default drift (right)
+    for _ in range(5):
+        g.tick()
+    assert all((m["x"], m["y"]) == (3, 3) for m in g.state().party)
+    assert g.state().turn == 0, "idle ticks do not consume turns"
+    g.apply_action(0, {"direction": "right"})
+    g.tick()
+    assert all((m["x"], m["y"]) == (4, 3) for m in g.state().party), "one command = one tile"
+    assert g.state().turn == 1
+    g.tick()
+    assert all((m["x"], m["y"]) == (4, 3) for m in g.state().party), "no drift after the command"
+
+
+def test_wall_blocks_the_move():
+    g = _game()
+    s = _open_field(g)
+    s.walls.append((1, 0))
+    g.apply_action(0, {"direction": "right"})
+    g.tick()
+    assert all((m["x"], m["y"]) == (0, 0) for m in g.state().party), "wall blocks the move"
+    assert g.state().turn == 0, "a blocked move consumes no turn"
+    g.apply_action(0, {"direction": "down"})
+    g.tick()
+    assert all((m["x"], m["y"]) == (0, 1) for m in g.state().party), "other moves still work"
+
+
+def test_each_command_moves_exactly_one_tile_and_allows_reversal():
+    """The dungeon's own controls: every direction command is one tile
+    (FIFO, no auto-repeat run-on), and a 180-degree turn is allowed —
+    unlike snake's input queue, which rejects reversals."""
+    g = _game()
+    s = _open_field(g)
+    for m in s.party:
+        m["x"], m["y"] = 3, 3
+    g.apply_action(0, {"direction": "left"})   # reversal of the initial facing (right)
     g.tick()
     assert all((m["x"], m["y"]) == (2, 3) for m in g.state().party), "reversal applied"
     g.apply_action(0, {"direction": "right"})
-    g.apply_action(0, {"direction": "down"})   # last write wins within one tick
+    g.apply_action(0, {"direction": "down"})   # queued: consumed one per tick
     g.tick()
-    assert all((m["x"], m["y"]) == (2, 4) for m in g.state().party)
+    assert all((m["x"], m["y"]) == (3, 3) for m in g.state().party), "first queued command first"
+    g.tick()
+    assert all((m["x"], m["y"]) == (3, 4) for m in g.state().party), "second command on the next tick"
+    g.tick()
+    assert all((m["x"], m["y"]) == (3, 4) for m in g.state().party), "queue empty: stand still"
 
 
 def test_potion_heals_the_whole_party():

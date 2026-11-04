@@ -14,6 +14,7 @@ whose measured difficulty is closest to the requested 1-10 target.
 from __future__ import annotations
 
 import random
+from collections import deque
 
 from .combat import make_monster, make_party
 from .config import DungeonConfig
@@ -52,6 +53,15 @@ def generate_level(rng: random.Random, cfg: DungeonConfig, difficulty: int,
         level = min(5, 1 + round(x * 4) + rng.randint(0, 1))
         monsters.append(make_monster(rng, cx, cy, cfg, kind="monster", level=level))
     potions = [cells[monster_count + i] for i in range(potion_count)]
+    # walls block movement; they scale with intensity and never cover the
+    # hero start, the boss, monsters or potions
+    wall_count = round(x * (n - 2))          # 0 .. n-2 walls
+    remaining = [c for c in free if c not in set(cells)]
+    walls = rng.sample(remaining, min(wall_count, len(remaining)))
+    # the boss must always be reachable from the hero start (walls may never
+    # seal off the dungeon), so drop walls from the end until it is
+    while walls and not _connected(hero_cell, boss_cell, set(walls), n):
+        walls.pop()
     return {
         "grid_size": n,
         "difficulty": d,
@@ -59,7 +69,26 @@ def generate_level(rng: random.Random, cfg: DungeonConfig, difficulty: int,
         "boss": make_monster(rng, boss_cell[0], boss_cell[1], cfg, kind="boss"),
         "monsters": monsters,
         "potions": potions,
+        "walls": sorted(walls),
     }
+
+
+def _connected(start: tuple[int, int], goal: tuple[int, int],
+               walls: set, n: int) -> bool:
+    """BFS over the grid without crossing walls: is `goal` reachable from
+    `start`?"""
+    seen = {start}
+    queue = deque([start])
+    while queue:
+        cx, cy = queue.popleft()
+        if (cx, cy) == goal:
+            return True
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx, ny = cx + dx, cy + dy
+            if 0 <= nx < n and 0 <= ny < n and (nx, ny) not in walls and (nx, ny) not in seen:
+                seen.add((nx, ny))
+                queue.append((nx, ny))
+    return False
 
 
 def hit_probability(attack: int, ac: int) -> float:

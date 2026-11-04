@@ -45,8 +45,9 @@ def test_generate_level_layout_is_valid():
     # boss sits in the diagonally opposite corner
     assert (lvl["boss"]["x"], lvl["boss"]["y"]) == (n - 1 - hx, n - 1 - hy)
     cells = ([lvl["hero_start"], (lvl["boss"]["x"], lvl["boss"]["y"])]
-             + [(m["x"], m["y"]) for m in lvl["monsters"]] + list(lvl["potions"]))
-    assert len(set(cells)) == len(cells), "no overlapping placements"
+             + [(m["x"], m["y"]) for m in lvl["monsters"]] + list(lvl["potions"])
+             + [tuple(w) for w in lvl["walls"]])
+    assert len(set(cells)) == len(cells), "no overlapping placements (incl. walls)"
     assert all(0 <= x < n and 0 <= y < n for x, y in cells)
     assert lvl["monsters"] and lvl["potions"]
     assert all(m["weapon"]["die"] and m["skills"] and m["level"] >= 1
@@ -60,6 +61,21 @@ def test_harder_levels_have_more_stronger_monsters_and_fewer_potions():
     assert len(hard["monsters"]) > len(easy["monsters"])
     assert sum(m["level"] for m in hard["monsters"]) > sum(m["level"] for m in easy["monsters"])
     assert len(hard["potions"]) <= len(easy["potions"])
+    assert len(hard["walls"]) >= len(easy["walls"]), "harder levels have at least as many walls"
+
+
+def test_walls_never_seal_off_the_boss():
+    """Whatever the difficulty, the boss cell must stay reachable from the
+    hero start without crossing walls — otherwise no solution exists."""
+    cfg = DungeonConfig()
+    from games.dungeon.levelgen import _connected
+    for d in range(MIN_DIFFICULTY, MAX_DIFFICULTY + 1):
+        for seed in (1, 7, 42):
+            lvl = generate_level(random.Random(seed), cfg, d)
+            n = lvl["grid_size"]
+            assert _connected(lvl["hero_start"],
+                              (lvl["boss"]["x"], lvl["boss"]["y"]),
+                              set(tuple(w) for w in lvl["walls"]), n), (d, seed)
 
 
 def test_duel_threat_measures_stat_closeness_and_caps_at_lethal():
