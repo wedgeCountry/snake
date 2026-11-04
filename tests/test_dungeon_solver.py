@@ -17,8 +17,8 @@ from games.dungeon.solver import (
 
 
 def _cfg(**kw):
-    # no random spawns/drops in solver replays
-    base = dict(weapon_drop_chance=0.0, spawn_chance=0.0)
+    # no weapon drops in solver replays
+    base = dict(weapon_drop_chance=0.0)
     base.update(kw)
     return DungeonConfig(**base)
 

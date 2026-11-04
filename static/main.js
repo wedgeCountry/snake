@@ -104,8 +104,13 @@
     view.dom.speed.addEventListener('input', (e) => vm.setSpeed(parseInt(e.target.value, 10)));
 
     let input = null;
-    if (window.SnakeInput) {
-      input = new SnakeInput(vm, view, startIfNeeded);
+    // per-game input module when the game ships one (snake -> SnakeInput,
+    // dungeon -> DungeonInput); otherwise the generic arrow-key fallback below.
+    // Looking the constructor up per game also prevents a stale SnakeInput
+    // from a previously played game from hijacking a 2D game's keys.
+    const InputCtor = window[game.id.charAt(0).toUpperCase() + game.id.slice(1) + 'Input'];
+    if (InputCtor) {
+      input = new InputCtor(vm, view, startIfNeeded);
       shell.input = input;
     } else {
       window.addEventListener('keydown', (e) => {

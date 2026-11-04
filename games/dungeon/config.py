@@ -10,7 +10,7 @@ JSON-serializable.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from ..engine import RuleConfig
 
@@ -26,7 +26,6 @@ BOSS_ATTACK = 6
 BOSS_INIT = 4
 BOSS_LEVEL = 5
 POTION_HEAL = 8
-SPAWN_CHANCE = 0.35
 XP_PER_KILL = 10
 XP_LEVEL_UP = 30
 
@@ -110,7 +109,6 @@ class DungeonConfig(RuleConfig):
     boss_init: int = BOSS_INIT
     boss_level: int = BOSS_LEVEL
     potion_heal: int = POTION_HEAL
-    spawn_chance: float = SPAWN_CHANCE
     xp_per_kill: int = XP_PER_KILL
     xp_level_up: int = XP_LEVEL_UP
     step_time_ms: int = 300
@@ -139,5 +137,3 @@ class DungeonConfig(RuleConfig):
     max_enchant_level: int = 3
     enchant_cost_base: int = 10   # gold cost = base * (new level); level 1 costs 10
     boss_legendary_drop: bool = True  # the boss always drops a legendary weapon
-    weights: dict[str, int] = field(default_factory=lambda: {"monster": 70, "potion": 30})
-    durations_s: dict[str, float | None] = field(default_factory=lambda: {"monster": None, "potion": None})

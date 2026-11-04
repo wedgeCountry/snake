@@ -6,9 +6,8 @@ hp, party level, xp, every monster's hp, remaining potions — so the returned
 solution is a shortest (turn-optimal) winning move sequence. Duels are
 resolved with a deterministic expected-damage model (`_expected_duel`: the
 party's combined dps vs the monster, the monster striking back once per round
-against the weakest member until it dies), random spawns are off and weapon
-drops are not assumed, i.e. the proof covers the static generated layout
-conservatively.
+against the weakest member until it dies), and weapon drops are not assumed,
+i.e. the proof covers the static generated layout conservatively.
 
 `prove_playable(difficulty, party_level, ...)` generates a level and asks
 whether a party of that level can beat it; `minimal_party_level` finds the

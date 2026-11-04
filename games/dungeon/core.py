@@ -3,7 +3,10 @@
 moves as a unit through a grid dungeon, fights monsters in initiative-ordered
 d20-vs-AC round combat, grabs potions (party-wide heal) and dropped weapons,
 shares XP and levels up every member, and slay the boss in the far corner.
-Zero I/O, injectable RNG. Implements the pipeline Game protocol."""
+The level is generated once at init and stays static afterwards — no
+mid-game spawns. Direction input is last-write-wins (reversal allowed, unlike
+snake's queue), so the dungeon's own controls stay responsive. Zero I/O,
+injectable RNG. Implements the pipeline Game protocol."""
 
 from __future__ import annotations
 
@@ -11,13 +14,12 @@ import copy
 import random
 from typing import Any
 
-from ..common.direction import Direction, DirectionQueue
+from ..common.direction import Direction
 from ..common.grid_move import clamp2d
-from ..common.spawner import WeightedSpawner
 from ..engine import GameState
-from .combat import enchant_weapon, make_legendary, make_monster, make_party, random_trait, resolve_encounter
+from .combat import enchant_weapon, make_legendary, make_party, random_trait, resolve_encounter
 from .config import LEGENDARY_TABLE, DungeonConfig
-from .levelgen import clamp_difficulty, generate_level_with_target
+from .levelgen import generate_level_with_target
 
 COMBAT_LOG_LINES = 6
 
@@ -58,9 +60,8 @@ class DungeonGame:
         self._rng = rng or random.Random()
         self._config = config or DungeonConfig()
         self._state: DungeonState | None = None
-        self._queue = DirectionQueue()
-        self._last = Direction(1, 0, 0)
-        self._spawner = WeightedSpawner(self._rng, [("monster", 70), ("potion", 30)])
+        self._last = Direction(1, 0, 0)   # drift direction when no input is queued
+        self._next: Direction | None = None  # last-write-wins steering input
 
     @property
     def state_schema_version(self) -> int:
@@ -83,8 +84,8 @@ class DungeonGame:
                                    difficulty=level["difficulty"],
                                    level_difficulty=level["measured_difficulty"])
         self._config = cfg
-        self._queue.clear()
         self._last = Direction(1, 0, 0)
+        self._next = None
         return self._state
 
     def state(self) -> DungeonState:
@@ -107,8 +108,8 @@ class DungeonGame:
             difficulty=int(data.get("difficulty", 5)),
             level_difficulty=float(data.get("levelDifficulty", 5.0)),
         )
-        self._queue.clear()
         self._last = Direction(1, 0, 0)
+        self._next = None
 
     def max_players(self) -> int:
         return 1
@@ -120,8 +121,9 @@ class DungeonGame:
         if player != 0:
             raise ValueError("dungeon is single-player")
         if "direction" in action:
-            direction = Direction.from_name_2d(str(action["direction"]))
-            self._queue.push(direction, self._last)
+            # the dungeon's own controls: last write wins, 180-degree turns
+            # allowed (unlike snake's input queue)
+            self._next = Direction.from_name_2d(str(action["direction"]))
         elif "enchant" in action:
             state = self.state()
             idx = int(action.get("member", 0))
@@ -142,8 +144,9 @@ class DungeonGame:
         cfg = self._config
         state.turn += 1
         n = state.grid_size
-        d = self._queue.pop() or self._last
+        d = self._next or self._last
         self._last = d
+        self._next = None
         dx, dy = d.as_2d()
         leader = _leader(state)
         nx, ny = clamp2d(leader["x"] + dx, leader["y"] + dy, n)
@@ -151,7 +154,6 @@ class DungeonGame:
             member["x"], member["y"] = nx, ny
         self._combat(state, cfg)
         self._loot(state, cfg)
-        self._maybe_spawn(state, cfg)
         self._level_up(state, cfg)
         state.score = sum(m["xp"] for m in state.party) + 2 * leader.get("gold", 0)
         if all(m["hp"] <= 0 for m in state.party):
@@ -222,24 +224,4 @@ class DungeonGame:
                     member["max_hp"] += trait.get("max_hp", 0)
                 member["hp"] = member["max_hp"]
 
-    def _maybe_spawn(self, state: DungeonState, cfg: DungeonConfig) -> None:
-        if self._rng.random() >= cfg.spawn_chance:
-            return
-        n = state.grid_size
-        leader = _leader(state)
-        occupied = {(m["x"], m["y"]) for m in state.monsters}
-        occupied.add((leader["x"], leader["y"]))
-        occupied.update(state.potions)
-        free = sorted((x, y) for x in range(n) for y in range(n) if (x, y) not in occupied)
-        if not free:
-            return
-        spawned = self._spawner.spawn(free)
-        if spawned is None:
-            return
-        cell, kind = spawned
-        if kind == "monster":
-            # monsters scale with dungeon depth (turns) and requested difficulty
-            level = 1 + min(2, state.turn // 60) + (clamp_difficulty(cfg.difficulty) - 1) // 3
-            state.monsters.append(make_monster(self._rng, cell[0], cell[1], cfg, kind="monster", level=level))
-        else:
-            state.potions.append(cell)
+

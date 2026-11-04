@@ -38,7 +38,7 @@ class ScriptedRng:
 
 
 def _cfg(**kw):
-    base = dict(weapon_drop_chance=0.0, spawn_chance=0.0)
+    base = dict(weapon_drop_chance=0.0)
     base.update(kw)
     return DungeonConfig(**base)
 
@@ -229,21 +229,40 @@ def test_level_up_grants_attack_hp_and_a_trait_to_every_member():
         assert len(m["traits"]) == base_traits + 1, "one new trait per member"
 
 
-def test_spawned_monsters_carry_ac_attack_and_dice_weapons():
+def test_level_is_static_after_generation():
+    """The level is generated once at init; no monsters/potions spawn later."""
     g = DungeonGame(rng=random.Random(3))
-    g.init(DungeonConfig(spawn_chance=0.9))
+    g.init(DungeonConfig())
     s = g.state()
     for m in s.party:
         m["hp"] = m["max_hp"] = 100000  # survive whatever we walk into
-    for _ in range(60):
+    before = (sorted((m["x"], m["y"], m["hp"]) for m in s.monsters),
+              sorted(s.potions))
+    dirs = ["left", "right", "up", "down"]
+    for i in range(80):
+        g.apply_action(0, {"direction": dirs[i % 4]})
         g.tick()
-        if len(g.state().monsters) > 1:
-            break
-    spawned = [m for m in g.state().monsters if m["kind"] == "monster"]
-    assert spawned, "a monster spawned within 60 turns"
-    m = spawned[0]
-    assert m["ac"] >= 12 and m["attack"] >= 3 and m["weapon"]["die"] >= 6
-    assert m["skills"] and m["level"] >= 1
+    st = g.state()
+    after = (sorted((m["x"], m["y"], m["hp"]) for m in st.monsters),
+             sorted(st.potions))
+    assert st.turn == 80 and st.status == "running"
+    assert before == after, "the level stayed static for 80 turns"
+
+
+def test_direction_input_is_last_write_wins_and_allows_reversal():
+    """The dungeon's own controls: no snake-style queue — a new direction
+    applies immediately, including a 180-degree turn."""
+    g = _game()
+    s = _open_field(g)
+    for m in s.party:
+        m["x"], m["y"] = 3, 3
+    g.apply_action(0, {"direction": "left"})   # opposite of the default drift (right)
+    g.tick()
+    assert all((m["x"], m["y"]) == (2, 3) for m in g.state().party), "reversal applied"
+    g.apply_action(0, {"direction": "right"})
+    g.apply_action(0, {"direction": "down"})   # last write wins within one tick
+    g.tick()
+    assert all((m["x"], m["y"]) == (2, 4) for m in g.state().party)
 
 
 def test_potion_heals_the_whole_party():
