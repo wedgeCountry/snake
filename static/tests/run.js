@@ -166,6 +166,9 @@ function env(status, score) {
   assert(JSON.stringify(queued) === JSON.stringify(
     ['up', 'down', 'left', 'right', 'up', 'left', 'down', 'right', 'enchant:']),
     'dungeon input maps arrow keys + WASD to 2D directions and E to enchant');
+  const beforeRepeat = queued.length;
+  inListeners['keydown']({ key: 'ArrowLeft', repeat: true, preventDefault() {} });
+  assert(queued.length === beforeRepeat, 'dungeon input ignores key auto-repeat (one press = one tile)');
   fakeVmD.running = false;
   key('ArrowUp');
   assert(started === 1 && queued.length === 9, 'a steering key on the start screen starts the game');

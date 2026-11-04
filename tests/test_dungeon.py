@@ -316,20 +316,25 @@ def test_wall_blocks_the_move():
     assert all((m["x"], m["y"]) == (0, 1) for m in g.state().party), "other moves still work"
 
 
-def test_direction_input_is_last_write_wins_and_allows_reversal():
-    """The dungeon's own controls: no snake-style queue — a new direction
-    applies immediately, including a 180-degree turn."""
+def test_each_command_moves_exactly_one_tile_and_allows_reversal():
+    """The dungeon's own controls: every direction command is one tile
+    (FIFO, no auto-repeat run-on), and a 180-degree turn is allowed —
+    unlike snake's input queue, which rejects reversals."""
     g = _game()
     s = _open_field(g)
     for m in s.party:
         m["x"], m["y"] = 3, 3
-    g.apply_action(0, {"direction": "left"})   # opposite of the default drift (right)
+    g.apply_action(0, {"direction": "left"})   # reversal of the initial facing (right)
     g.tick()
     assert all((m["x"], m["y"]) == (2, 3) for m in g.state().party), "reversal applied"
     g.apply_action(0, {"direction": "right"})
-    g.apply_action(0, {"direction": "down"})   # last write wins within one tick
+    g.apply_action(0, {"direction": "down"})   # queued: consumed one per tick
     g.tick()
-    assert all((m["x"], m["y"]) == (2, 4) for m in g.state().party)
+    assert all((m["x"], m["y"]) == (3, 3) for m in g.state().party), "first queued command first"
+    g.tick()
+    assert all((m["x"], m["y"]) == (3, 4) for m in g.state().party), "second command on the next tick"
+    g.tick()
+    assert all((m["x"], m["y"]) == (3, 4) for m in g.state().party), "queue empty: stand still"
 
 
 def test_potion_heals_the_whole_party():

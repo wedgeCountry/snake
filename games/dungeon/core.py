@@ -5,9 +5,10 @@ d20-vs-AC round combat, grabs potions (party-wide heal) and dropped weapons,
 shares XP and levels up every member, and slay the boss in the far corner.
 The level (monsters, potions, walls) is generated once at init and stays
 static afterwards — no mid-game spawns — and the boss is capped so the level
-is always provably beatable. Movement is one tile per command: no input means
-the party stands still, direction input is last-write-wins (reversal allowed,
-unlike snake's queue), and walls block moves. Zero I/O, injectable RNG.
+is always provably beatable. Movement is one tile per command: commands sit in
+a small FIFO (reversal allowed, unlike snake's queue), a tick consumes at most
+one of them, no input means the party stands still, and walls block moves.
+Zero I/O, injectable RNG.
 Implements the pipeline Game protocol."""
 
 from __future__ import annotations
@@ -65,8 +66,8 @@ class DungeonGame:
         self._rng = rng or random.Random()
         self._config = config or DungeonConfig()
         self._state: DungeonState | None = None
-        self._last = Direction(1, 0, 0)   # drift direction when no input is queued
-        self._next: Direction | None = None  # last-write-wins steering input
+        self._last = Direction(1, 0, 0)      # facing (kept for display/solver parity)
+        self._pending: list[Direction] = []  # FIFO of steering commands, one tile each
 
     @property
     def state_schema_version(self) -> int:
@@ -92,7 +93,7 @@ class DungeonGame:
                                    level_difficulty=level["measured_difficulty"])
         self._config = cfg
         self._last = Direction(1, 0, 0)
-        self._next = None
+        self._pending = []
         return self._state
 
     def state(self) -> DungeonState:
@@ -117,7 +118,7 @@ class DungeonGame:
             level_difficulty=float(data.get("levelDifficulty", 5.0)),
         )
         self._last = Direction(1, 0, 0)
-        self._next = None
+        self._pending = []
 
     def max_players(self) -> int:
         return 1
@@ -129,9 +130,12 @@ class DungeonGame:
         if player != 0:
             raise ValueError("dungeon is single-player")
         if "direction" in action:
-            # the dungeon's own controls: last write wins, 180-degree turns
-            # allowed (unlike snake's input queue)
-            self._next = Direction.from_name_2d(str(action["direction"]))
+            # the dungeon's own controls: a FIFO of commands — each command
+            # moves exactly one tile, 180-degree turns allowed (unlike
+            # snake's input queue, which rejects them)
+            d = Direction.from_name_2d(str(action["direction"]))
+            if len(self._pending) < 4:
+                self._pending.append(d)
         elif "enchant" in action:
             state = self.state()
             idx = int(action.get("member", 0))
@@ -149,11 +153,10 @@ class DungeonGame:
         state = self.state()
         if state.status != "running":
             return state
-        if self._next is None:
+        if not self._pending:
             return state  # one tile per command: no input, no movement
         cfg = self._config
-        d = self._next
-        self._next = None
+        d = self._pending.pop(0)
         self._last = d
         dx, dy = d.as_2d()
         n = state.grid_size
