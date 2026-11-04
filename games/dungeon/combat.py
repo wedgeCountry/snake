@@ -29,6 +29,29 @@ def make_hero(cfg: DungeonConfig) -> dict:
     }
 
 
+def make_hero_at_level(cfg: DungeonConfig, level: int) -> dict:
+    """A hero of the given level with the same deterministic scaling the core
+    applies on level-up (dmg +2, max_hp +6, full heal, one new trait per
+    level up to max_traits, traits picked in table order). Used by the solver
+    to prove playability at a specific character level."""
+    hero = make_hero(cfg)
+    owned = [t.get("key", t["name"]) for t in hero["traits"]]
+    for _ in range(max(0, level - 1)):
+        hero["level"] += 1
+        hero["dmg"] += 2
+        hero["max_hp"] += 6
+        if len(hero["traits"]) < cfg.max_traits:
+            for key in sorted(TRAIT_TABLE):
+                if key not in owned:
+                    trait = dict(TRAIT_TABLE[key], key=key)
+                    hero["traits"].append(trait)
+                    owned.append(key)
+                    hero["max_hp"] += trait.get("max_hp", 0)
+                    break
+    hero["hp"] = hero["max_hp"]
+    return hero
+
+
 def make_monster(rng: random.Random, x: int, y: int, cfg: DungeonConfig,
                  kind: str = "monster", level: int | None = None) -> dict:
     if kind == "boss":
